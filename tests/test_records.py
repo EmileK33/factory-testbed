@@ -60,12 +60,13 @@ def test_summarise_records_counts_a_clean_feed():
 
 
 def test_summarise_records_counts_the_live_feed():
-    """Pinned against the committed ``data/records.json``, hand-counted record by
-    record (not derived from ``check_record``, the very contract under test):
-    R-1001..R-1005 are each a recognised region/currency with a positive
-    integer amount (valid); the unlabelled "Fennel Labs" row has no ``id``,
-    "Garnet Rail" has an unrecognised currency (GBP), and "Halcyon Air" has a
-    non-numeric amount ("n/a") — three drops.
+    """Pins the literal expected counts for the committed ``data/records.json``
+    (8 rows): R-1001..R-1005 are each a recognised region/currency with a
+    positive integer amount (valid); the unlabelled "Fennel Labs" row has no
+    ``id``, "Garnet Rail" has an unrecognised currency (GBP), and "Halcyon
+    Air" has a non-numeric amount ("n/a") — three drops. A change to either
+    the feed or the validation contract that shifts these counts fails this
+    test loudly.
     """
     result = summarise_records(load_records())
     assert result == {"total": 8, "valid": 5, "dropped": 3}

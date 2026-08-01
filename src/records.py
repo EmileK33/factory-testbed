@@ -24,14 +24,15 @@ def load_records(path: str | Path | None = None) -> list[dict]:
     return [dict(row) for row in payload]
 
 
-def summarise_records(records: list[dict]) -> dict:
+def summarise_records(records: list[object]) -> dict:
     """Return counts for *records*: how many were seen, valid, and dropped.
 
     A record is valid when ``check_record`` accepts it (returns a normalised
-    copy rather than ``None``); that includes a record missing its ``id``
-    field, which ``check_record`` always drops. Elements that are not even a
-    dict (``check_record`` guards on ``isinstance``) are counted as dropped,
-    not raised on.
+    copy rather than ``None``). Everything else counts as dropped: a record
+    missing its ``id`` field (``check_record`` always rejects that) and any
+    element that is not even a dict (``check_record`` guards on
+    ``isinstance`` and returns ``None`` rather than raising) both land on the
+    dropped side, never the valid one.
     """
     total = len(records)
     valid = sum(1 for record in records if check_record(record) is not None)
