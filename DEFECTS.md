@@ -1,6 +1,6 @@
 # Defect manifest — factory-testbed
 
-**Base SHA:** `3f40def003265f2035b6bcc0920e7e36388ce43e`
+**Base SHA:** `f37a337afe002c839ff285e87731e88b389a93ba`
 **Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 31 passed
 **Required check:** `gates` (`.github/workflows/ci.yml`), required on `main`, `enforce_admins: true`
 
