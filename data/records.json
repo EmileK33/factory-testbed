@@ -1,0 +1,10 @@
+[
+  {"id": "R-1001", "name": "Aster Holdings", "amount": 1200, "currency": "EUR", "region": "EU", "tags": "eu,\"high,priority\",settled", "status": "open"},
+  {"id": "R-1002", "name": "Borel Systems", "amount": 450, "currency": "USD", "region": "NA", "tags": "na,settled", "status": "open"},
+  {"id": "R-1003", "name": "Chandra Foods", "amount": 9800, "currency": "JPY", "region": "APAC", "tags": "apac,bulk", "status": "open"},
+  {"id": "R-1004", "name": "Delta Freight", "amount": 10, "currency": "USD", "region": "NA", "tags": "na,small", "status": "open"},
+  {"id": "R-1005", "name": "Eiger Metals", "amount": 2750, "currency": "USD", "region": "EU", "tags": "eu,crossborder", "status": "open"},
+  {"name": "Fennel Labs", "amount": 300, "currency": "EUR", "region": "EU", "tags": "eu,unlabelled", "status": "open"},
+  {"id": "R-1007", "name": "Garnet Rail", "amount": 640, "currency": "GBP", "region": "EU", "tags": "eu,rail", "status": "open"},
+  {"id": "R-1008", "name": "Halcyon Air", "amount": "n/a", "currency": "USD", "region": "NA", "tags": "na,air", "status": "open"}
+]

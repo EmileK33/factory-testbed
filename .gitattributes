@@ -1,0 +1,5 @@
+# The committed report artifact is compared byte-for-byte by tests/test_golden.py.
+# Without this, a Windows checkout rewrites its newlines and the comparison fails
+# for a reason that has nothing to do with the report.
+* text=auto eol=lf
+*.png binary

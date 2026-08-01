@@ -1,0 +1,29 @@
+Settlement report
+=================
+
+id      name            region  amount  currency
+------  --------------  ------  ------  --------
+R-1001  Aster Holdings  EU        1200  EUR
+R-1002  Borel Systems   NA         450  USD
+R-1003  Chandra Foods   APAC      9800  JPY
+R-1004  Delta Freight   NA          10  USD
+R-1005  Eiger Metals    EU        2750  USD
+
+Net after fees
+--------------
+R-1001       995
+R-1002       403
+R-1003      9775
+R-1004       -15
+R-1005      2313
+
+Records read: 8
+Records accepted: 5
+Records rejected: 3
+
+Unlabelled records: Fennel Labs
+Total (USD): 4595.66
+Amounts are shown in USD.
+All 5 reported fields are checked by the validation rules.
+Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY
+Validation covers: id, name, amount, currency, region

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    name: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install gate tooling
+        run: python -m pip install --disable-pip-version-check pytest ruff
+
+      - name: type-check
+        run: python -m compileall -q src
+
+      - name: lint
+        run: python -m ruff check .
+
+      - name: tests
+        run: python -m pytest -q
