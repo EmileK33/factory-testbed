@@ -1,0 +1,6 @@
+# `python -m compileall -q src` is one of this repository's gates, so running the
+# gates writes bytecode into the tree. None of it belongs in a commit.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
