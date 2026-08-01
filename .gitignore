@@ -4,3 +4,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+
+# Scratch files reviewers and agents leave in the repo root.
+factory-testbed-*.txt
+factory-testbed-*.golden
