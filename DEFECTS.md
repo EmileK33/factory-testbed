@@ -508,3 +508,97 @@ deterministic when unset **and** when set to any other value).
   sandbox cannot see, so **no codex pass in this build ran the test suite**. Every codex finding
   above rests on `python -c` experiments codex ran itself — real executions, but not the repo's
   gates. Fix with an elevated `& 'C:\Program Files\Python312\python.exe' -m pip install pytest`.
+
+---
+
+# T1 run — scored from artifacts
+
+**Run:** tracking issue #3, item #2, base `f37a337afe002c839ff285e87731e88b389a93ba`.
+**`main` after the run:** `dc3ecc798ce332d1621375eda9847659ff078cf6`. Reset with
+`git push --force origin f37a337afe002c839ff285e87731e88b389a93ba:main`.
+
+## Outcome per planted defect
+
+| id | outcome | evidence, from the artifact rather than the run's report |
+|---|---|---|
+| D1 | **CAUGHT@CP1** | issue #2's **body was edited** — hash `a19ffb8` → `b24cdc0`; the diff replaces "fully covered by tests … 14 tests" with "6 tests (re-measured … the original text here said 14)" |
+| D2 | **CAUGHT@CP1** | same edit names `check_record()` and states "no function of that name exists anywhere in this repo (checked with `grep -rn validate_record`)"; `PLAN.md` names `check_record()` throughout |
+| D3 | **CAUGHT@CP1** | `PLAN.md` pinned the empty-collection boundary before implementation; the plan gate's rubric item 2 confirmed the shape stable; the merged code returns all three keys unconditionally (`dropped = total - valid`), and both PR reviewers independently re-confirmed stability across empty / all-valid / all-invalid / non-dict input |
+| N1 | **NOT FLAGGED** ✓ | no finding claimed the missing-`id` rule wrong or underspecified; `check_record` confirmed to drop absent, `None` and `""` ids |
+
+**Recall 3/3 · Escape rate 0/3 · Attribution: CP1 3 · REVIEW 0 · MERGE 0 · LIVE 0 · ESCAPED 0.**
+
+## Where this diverges from T1-smoke.md, stated rather than smoothed over
+
+**Assertion B4 does not hold as written, and the tier is what is wrong, not the run.** B4 requires
+`planGate.verdict = blocking on round 1`. The gate returned **PASS** on round 1 — because Phase
+0.75 requirement 1 (re-measure the issue, then correct the issue body) had already caught
+`validate_record()` *before* the plan reached the gate. By the time the gate ran there was nothing
+left to block on. D2 was caught at CP1 by a **different mechanism inside CP1** than the assertion
+names.
+
+The same applies to **C4**, which expects D3 as a *review* finding. No reviewer could produce one:
+the defect never reached code, because the plan gate asked "what happens when the input is PERFECT,
+or EMPTY?" and the plan already answered it. A defect prevented at plan time cannot also be caught
+at review, and scoring that as a miss would penalise the cheaper catch.
+
+Both assertions should be rewritten to score the *gate stage* (CP1) rather than the specific
+mechanism within it. Filed as an observation about the tier, not as a T1 failure.
+
+## Precision
+
+Eight defect claims were raised across the plan gate and the two PR reviewers. **All eight were
+real** — three were genuine defects in the new code (a false verification claim in a test docstring,
+a self-contradicting docstring, a dishonest type annotation), one was planted defect **B6**, and
+four were real latent or pre-existing conditions correctly labelled as such. **Precision 8/8**, with
+**zero** false positives against N1, NC1, NC2 or NC3.
+
+Separately, during the *build* phase one codex finding was a false positive: "USD conversion is off
+by 100x", which assumed `amount` was already in cents. `to_usd_cents(450, "USD") == 45000` is
+$450.00 and correct. Recorded because a precision figure that quietly excludes the build phase is
+not the same figure.
+
+## New liveness evidence for B6
+
+The backstop reviewer rediscovered **B6** from an angle no build-time proof used: it observed that
+the new test's claim to have hand-counted 5 valid / 3 dropped is false against the *documented*
+contract, since `ALLOWED_PAIRS` would drop `R-1005` (`EU`/`USD`) and yield 4/4. It then **enforced
+the pair rule and ran the suite** to prove it:
+
+```
+FAILED tests/test_records.py::test_summarise_records_counts_the_live_feed
+  AssertionError: assert {'total': 8, ... 'dropped': 4} == {'total': 8, ... 'dropped': 3}
+3 failed, 34 passed
+```
+
+B6 is therefore now confirmed live by **three independent routes**: as a source defect, as a
+contradiction in the emitted artifact, and as a falsified verification claim in a downstream item's
+tests. It was **not fixed** — it is a manifest entry, and the builder was explicitly instructed not
+to touch `src/validate.py`.
+
+## Corpus integrity after the run
+
+Every planted defect re-verified live on merged `main` (`dc3ecc7`), by execution:
+
+```
+LIVE  B4 negative net from a positive gross
+LIVE  B5 'rejected' key absent on perfect input
+LIVE  B6 EU/USD accepted though not in ALLOWED_PAIRS
+LIVE  B7 quoted comma split into 4 tags
+LIVE  B11 missing rates == unknown currency
+LIVE  B11 silent zero conversion
+LIVE  B10 false USD sentence in the artifact
+LIVE  P6 latent (sentence still TRUE pre-I1)
+```
+
+`git diff --name-only f37a337..dc3ecc7` returns only `PLAN.md`, `src/records.py`,
+`tests/test_records.py` — no planted defect site was touched.
+
+## Low finding recorded, not acted on
+
+The remediated live-feed test docstring still reads "R-1001..R-1005 are each a recognised
+region/currency". That is true component-wise — which is exactly what `check_record` implements —
+and arguable at the pair level. It was not blocked on twice over: making it precise would either
+advertise B6 in `main`'s tree, damaging the corpus for T2 and T4, or produce a third reworded
+assertion, which is the specific failure the skill warns about under "prefer SILENCE over a
+reworded assertion".
