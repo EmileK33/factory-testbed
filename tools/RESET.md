@@ -15,8 +15,9 @@ git ls-remote https://github.com/EmileK33/factory-testbed refs/heads/main
 ## Resetting
 
 `tools/protection.json` sets `allow_force_pushes: true`, so the reset needs **no** protection
-change — measured on this repository with protection enabled, `enforce_admins: true` and the
-`gates` check required:
+change — *provided the base SHA already has a passing `gates` check*, which it does, because it is
+a commit CI has already run on. Measured on this repository with protection enabled,
+`enforce_admins: true` and `gates` required:
 
 ```bash
 git push --force origin <base-sha>:main
@@ -26,19 +27,31 @@ git push --force origin <base-sha>:main
  + 1ee7e21...3d9858f 3d9858f -> main (forced update)      exit 0
 ```
 
-Do not take protection down to do this. Deleting and re-adding it opens a window in which a
-failed step leaves `main` unprotected, and the window is unnecessary.
+That proviso is the whole rule, and it is easy to measure your way past. What the required check
+gates is **whether the commit that ends up at the tip has a passing check** — not whether the push
+was a force. Both of these were refused, on the same repository, minutes after the force-push
+above succeeded:
 
-Note the asymmetry, because it is easy to read one result as the other: an **ordinary** push to
-`main` *is* refused while the required check has not passed on the pushed commit —
+```bash
+git push origin main                      # ordinary push of a commit CI has never seen
+git push --force origin <new-sha>:main    # force-push of a commit CI has never seen
+```
 
 ```
- ! [remote rejected] main -> main (protected branch hook declined)
+ ! [remote rejected] main -> main (protected branch hook declined)          exit 1
 ```
 
-— while a **force**-push is permitted by `allow_force_pushes`. Only the force-push is the reset
-path. And `git push … | tail` will report the failure as a success, because `$?` after a pipe is
-`tail`'s status; run the push so its own exit code is visible.
+So `allow_force_pushes` buys you only the non-fast-forward move. It does **not** exempt a commit
+from the check. Practical consequences:
+
+- **Resetting to a recorded base SHA works**, because that commit is already green.
+- **Landing a brand-new commit directly on `main` does not.** Take it through a PR so `gates` runs
+  on it, or lift protection for that push and restore it immediately afterwards.
+
+And run the push so its own exit code is visible: `git push … | tail` reports a rejected push as a
+success, because `$?` after a pipe is `tail`'s status. This runbook's first version claimed
+protection blocked the reset outright; the second overcorrected to "no protection change is ever
+needed". Both were generalisations from one observed case.
 
 ## Confirming the reset actually reset
 
