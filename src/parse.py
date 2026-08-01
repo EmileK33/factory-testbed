@@ -14,10 +14,14 @@ def parse_tags(raw: str | None) -> list[str]:
     in double quotes by the upstream exporter.
 
     A feed row is free-form JSON, so the column is not guaranteed to be a
-    string. Anything that is not one yields no tags rather than raising:
-    ``check_record()`` promises a normalised record or ``None``, and it cannot
-    keep that promise if this throws.
+    string. A column that is already a sequence is already split and passes
+    through; anything else yields no tags rather than raising, because
+    ``check_record()`` promises a normalised record or ``None`` and cannot keep
+    that promise if this throws. Passing this function its own output returns
+    that output unchanged.
     """
+    if isinstance(raw, (list, tuple)):
+        return [str(tag).strip() for tag in raw if str(tag).strip()]
     if not isinstance(raw, str) or not raw:
         return []
     return [part.strip().strip('"') for part in _TAG_SEPARATOR.split(raw) if part.strip()]

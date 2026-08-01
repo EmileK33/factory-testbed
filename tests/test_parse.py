@@ -16,9 +16,18 @@ def test_parse_tags_returns_nothing_for_a_blank_column():
     assert parse_tags(None) == []
 
 
-def test_parse_tags_does_not_raise_on_a_column_that_is_not_a_string():
-    assert parse_tags(["already", "a", "list"]) == []
+def test_parse_tags_passes_an_already_split_column_through():
+    assert parse_tags(["already", "a", "list"]) == ["already", "a", "list"]
+
+
+def test_parse_tags_is_idempotent():
+    once = parse_tags("na,settled")
+    assert parse_tags(once) == once
+
+
+def test_parse_tags_does_not_raise_on_a_column_of_an_unusable_type():
     assert parse_tags(17) == []
+    assert parse_tags({"na": 1}) == []
 
 
 def test_check_record_survives_a_tags_column_that_is_not_a_string():
