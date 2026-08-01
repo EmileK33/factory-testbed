@@ -3,7 +3,7 @@
     "strict": false,
     "contexts": ["gates"]
   },
-  "enforce_admins": false,
+  "enforce_admins": true,
   "required_pull_request_reviews": null,
   "restrictions": null,
   "allow_force_pushes": true,
