@@ -14,3 +14,22 @@ def test_parse_tags_tolerates_spacing_after_the_separator():
 def test_parse_tags_returns_nothing_for_a_blank_column():
     assert parse_tags("") == []
     assert parse_tags(None) == []
+
+
+def test_parse_tags_does_not_raise_on_a_column_that_is_not_a_string():
+    assert parse_tags(["already", "a", "list"]) == []
+    assert parse_tags(17) == []
+
+
+def test_check_record_survives_a_tags_column_that_is_not_a_string():
+    from src.validate import check_record
+
+    record = {
+        "id": "R-3001",
+        "name": "Odd Feed",
+        "amount": 1,
+        "currency": "USD",
+        "region": "NA",
+        "tags": ["a", "b"],
+    }
+    assert check_record(record) is not None

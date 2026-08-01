@@ -27,7 +27,12 @@ def get_rate(currency: str, path: str | Path | None = None) -> int | None:
 
 
 def to_usd_cents(amount: int, currency: str, path: str | Path | None = None) -> int:
-    """Convert *amount* in *currency* to whole USD cents."""
+    """Convert *amount* to whole USD cents.
+
+    *amount* is a whole unit of *currency* — 450 means 450 USD, not 450 cents —
+    so the conversion is ``amount * rate / 10000`` currency units, then times
+    100 to reach cents, which is the single ``// 100`` below.
+    """
     rate = get_rate(currency, path)
     if rate is None:
         return 0

@@ -48,6 +48,11 @@ def test_check_record_rejects_a_boolean_amount():
     assert check_record({**CLEAN, "amount": 1}) is not None
 
 
+def test_check_record_rejects_a_negative_amount():
+    assert check_record({**CLEAN, "amount": -1}) is None
+    assert check_record({**CLEAN, "amount": 0}) is not None
+
+
 def test_settlement_pairs_are_configured():
     assert hasattr(validate, "ALLOWED_PAIRS")
     assert ("EU", "EUR") in validate.ALLOWED_PAIRS
