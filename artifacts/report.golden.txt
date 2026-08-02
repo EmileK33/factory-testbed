@@ -1,13 +1,25 @@
 Settlement report
 =================
 
+EU
 id      name            region  amount  currency  tags
 ------  --------------  ------  ------  --------  ----------------------------
 R-1001  Aster Holdings  EU        1200  EUR       eu, "high,priority", settled
-R-1002  Borel Systems   NA         450  USD       na, settled
-R-1003  Chandra Foods   APAC      9800  JPY       apac, bulk
-R-1004  Delta Freight   NA          10  USD       na, small
 R-1005  Eiger Metals    EU        2750  USD       eu, crossborder
+Subtotal (USD): 4046.00
+
+NA
+id      name            region  amount  currency  tags
+------  --------------  ------  ------  --------  ----------------------------
+R-1002  Borel Systems   NA         450  USD       na, settled
+R-1004  Delta Freight   NA          10  USD       na, small
+Subtotal (USD): 460.00
+
+APAC
+id      name            region  amount  currency  tags
+------  --------------  ------  ------  --------  ----------------------------
+R-1003  Chandra Foods   APAC      9800  JPY       apac, bulk
+Subtotal (USD): 63.70
 
 Net after fees
 --------------

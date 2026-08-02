@@ -1,11 +1,40 @@
 """Tests for the rendered settlement report."""
 
 import re
+from decimal import Decimal
 
 from src.parse import parse_tags
 from src.records import load_records
 from src.report import render_report
 from src.validate import check_record
+
+# The section of the report that comes after the region-grouped table and its
+# subtotals: Net after fees, the three record counts, the unlabelled line,
+# Total (USD), the settlement-pairs line and the validation-covers line. This
+# is the literal, byte-for-byte tail that was committed to
+# artifacts/report.golden.txt on origin/main *before* this item's grouping
+# change landed (captured via `git show origin/main:artifacts/report.golden.txt`).
+# The issue requires this section unchanged; pinning it here as a hardcoded
+# before/after comparison catches a moved or altered tail even if a reader
+# skimming the regenerated artifact would not notice.
+PRE_CHANGE_TAIL = """Net after fees
+--------------
+R-1001       995
+R-1002       403
+R-1003      9775
+R-1004       -15
+R-1005      2313
+
+Records read: 8
+Records accepted: 5
+Records rejected: 3
+
+Unlabelled records: Fennel Labs
+Total (USD): 4569.70
+Amounts are shown in USD.
+Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY
+Validation covers: id, name, amount, currency, region
+"""
 
 
 def _row_cells(text: str, id_prefix: str) -> list[str]:
@@ -91,3 +120,109 @@ def test_report_does_not_claim_all_fields_are_checked():
     text = render_report()
     assert "reported fields are checked by the validation rules" not in text
     assert "Validation covers: id, name, amount, currency, region" in text
+
+
+def test_report_groups_regions_in_declared_order():
+    # The committed feed (data/records.json) has accepted records in all
+    # three of validate.REGION_CODES, so this uses the real feed, not a
+    # synthetic one. A line that is *exactly* one of the three region codes
+    # can only come from the per-region header this item adds -- the flat,
+    # ungrouped table never emits a line with just one of those tokens on it
+    # (every data/header/rule line carries multiple space-separated fields) --
+    # so this fails on the pre-grouping renderer, and also fails if the
+    # groups are emitted in the wrong order (e.g. APAC before EU).
+    text = render_report()
+    region_lines = [line for line in text.splitlines() if line in ("EU", "NA", "APAC")]
+    assert region_lines == ["EU", "NA", "APAC"]
+
+
+def test_report_region_subtotals_are_bound_to_their_own_region():
+    # Values from data/rates.json applied to data/records.json's accepted
+    # rows via to_usd_cents()'s own formula (amount * rate // 100), computed
+    # independently of render_report(): EU = 1200 EUR + 2750 USD -> 404600
+    # cents (4046.00); NA = 450 USD + 10 USD -> 46000 cents (460.00);
+    # APAC = 9800 JPY -> 6370 cents (63.70).
+    #
+    # Asserting the three "Subtotal (USD): ..." strings are merely *present*
+    # would pass even if a subtotal were printed under the wrong region's
+    # header (e.g. NA's amount shown under EU). Extracting the interleaved
+    # sequence of region-header lines and subtotal lines and comparing it to
+    # the exact expected sequence binds each subtotal to the region
+    # immediately above it, so a swapped placement -- or a subtotal computed
+    # from the wrong group -- fails this assertion.
+    text = render_report()
+    interleaved = re.findall(
+        r"^(?:EU|NA|APAC|Subtotal \(USD\): [\d.-]+)$", text, flags=re.MULTILINE
+    )
+    assert interleaved == [
+        "EU",
+        "Subtotal (USD): 4046.00",
+        "NA",
+        "Subtotal (USD): 460.00",
+        "APAC",
+        "Subtotal (USD): 63.70",
+    ]
+
+
+def test_report_subtotals_sum_to_total():
+    # Re-derives the "three subtotals sum to Total (USD)" invariant from the
+    # rendered text itself (regex + Decimal), independent of the hardcoded
+    # literals in test_report_region_subtotals_are_bound_to_their_own_region,
+    # so a bug that changes all subtotal literals in a way that still summed
+    # correctly (or a bug this test alone would need to catch) isn't hidden
+    # by trusting the same fixed numbers twice. With no grouping there are
+    # zero "Subtotal (USD):" matches, so the parsed sum is Decimal("0")
+    # against a Total (USD) of 4569.70 -- this fails on the pre-grouping
+    # renderer.
+    text = render_report()
+    subtotals = [Decimal(value) for value in re.findall(r"Subtotal \(USD\): (-?[\d.]+)", text)]
+    (total,) = re.findall(r"Total \(USD\): (-?[\d.]+)", text)
+    assert sum(subtotals) == Decimal(total)
+
+
+def test_report_shows_exactly_one_region_header_for_a_single_region_feed():
+    # The committed feed has accepted records in all three regions, so the
+    # "region with no accepted records is omitted entirely" branch is
+    # unreachable from it -- the only way to exercise that branch is a
+    # synthetic record set that deliberately has just one region. This reuses
+    # the single-record NA fixture from
+    # test_report_tags_column_is_blank_for_no_tags (records=[...], not the
+    # real feed) for exactly that reason.
+    #
+    # Asserting the absence of standalone "EU"/"APAC" lines would pass for a
+    # reason unrelated to grouping: the flat, ungrouped renderer also never
+    # emits those as standalone lines, for any input. Asserting there is
+    # *exactly one* region-header line, that it is specifically "NA", and
+    # that a subtotal line follows it, fails both when grouping is entirely
+    # absent (zero header lines) and when the omit-empty-region rule is
+    # dropped (three header lines, one per REGION_CODES entry, each with its
+    # own -- here zero-record -- subtotal).
+    record = {
+        "id": "R-9002",
+        "name": "Solo Region Co",
+        "amount": 500,
+        "currency": "USD",
+        "region": "NA",
+    }
+    text = render_report(records=[record])
+    lines = text.splitlines()
+    region_lines = [line for line in lines if line in ("EU", "NA", "APAC")]
+    assert region_lines == ["NA"]
+    na_index = lines.index("NA")
+    subsequent = lines[na_index + 1 :]
+    assert any(re.match(r"^Subtotal \(USD\): [\d.-]+$", line) for line in subsequent)
+
+
+def test_report_tail_after_grouped_table_is_byte_identical_to_pre_change_artifact():
+    # Everything after the region-grouped table -- Net after fees, the three
+    # record counts, the unlabelled line, Total (USD), settlement pairs and
+    # validation-covers -- must be unchanged by this item (issue #19: "no
+    # change to which records are accepted or rejected, and no change to
+    # Net after fees" plus "everything after the table is unchanged"). A
+    # regenerated golden artifact can preserve or subtly move this tail and
+    # still *look* right to someone skimming it; comparing the rendered
+    # text's tail against the literal pre-change content (captured from
+    # origin/main's committed artifact, before this item's code ran) is a
+    # real before/after check rather than a read-and-eyeball one.
+    text = render_report()
+    assert text.endswith(PRE_CHANGE_TAIL)

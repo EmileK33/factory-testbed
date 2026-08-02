@@ -55,12 +55,14 @@ def _cell(row: dict, field: str) -> str:
     return "-" if _missing(value) else str(value)
 
 
-def _table(rows: list[dict]) -> list[str]:
-    widths = [
+def _column_widths(rows: list[dict]) -> list[int]:
+    return [
         max([len(field)] + [len(_cell(row, field)) for row in rows])
         for field in REPORTED_FIELDS
     ]
 
+
+def _table(rows: list[dict], widths: list[int]) -> list[str]:
     def line(cells: list[str]) -> str:
         parts = [
             cell.rjust(width) if field in RIGHT_ALIGNED else cell.ljust(width)
@@ -87,8 +89,25 @@ def render_report(records: list[dict] | None = None) -> str:
     rejected = len(raw) - len(accepted)
 
     lines = ["Settlement report", "=================", ""]
-    lines.extend(_table(accepted))
-    lines.append("")
+
+    # Widths are computed once, globally, across every accepted record -- not
+    # recomputed per region -- so a column (e.g. amount) lines up at the same
+    # horizontal position in every group. Per-group widths would let a
+    # narrower region's columns drift out of alignment with a wider region's,
+    # which is the failure mode this report has never had and shouldn't gain
+    # just because the rows are now split across region blocks.
+    widths = _column_widths(accepted)
+    for region in validate.REGION_CODES:
+        group = [row for row in accepted if row["region"] == region]
+        if not group:
+            # A region with no accepted records is omitted entirely: no
+            # header, no empty table, no zero subtotal.
+            continue
+        lines.append(region)
+        lines.extend(_table(group, widths))
+        subtotal_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in group)
+        lines.append(f"Subtotal (USD): {_money(subtotal_cents)}")
+        lines.append("")
 
     lines.append("Net after fees")
     lines.append("--------------")
