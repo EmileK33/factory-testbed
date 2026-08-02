@@ -504,10 +504,32 @@ deterministic when unset **and** when set to any other value).
 - **P1 and P3** are proven by their consequence (the artifact moves; the file sets overlap only on
   the artifact) rather than by a factory actually re-classifying or ordering them. That happens
   when T2 runs.
-- **`pytest` is not installed machine-scope.** It lives under the user profile, which codex's
-  sandbox cannot see, so **no codex pass in this build ran the test suite**. Every codex finding
-  above rests on `python -c` experiments codex ran itself — real executions, but not the repo's
-  gates. Fix with an elevated `& 'C:\Program Files\Python312\python.exe' -m pip install pytest`.
+- **`pytest` was not machine-scope during the build, and now is.** For the whole build and the
+  T1 run it lived under the user profile, which codex's sandbox cannot read, so **no codex pass
+  during the build ran the test suite** — every codex finding above rests on `python -c`
+  experiments codex ran itself. Real executions, but not the repo's gates. Weigh them accordingly.
+
+  Resolved afterwards. `pytest`, `ruff` and the five transitive dependencies (`pluggy`,
+  `iniconfig`, `packaging`, `pygments`, `colorama`) are now installed to
+  `C:\Program Files\Python312\Lib\site-packages`, and codex has been demonstrated running all
+  three gates:
+
+  ```
+  [completed exit=0] python -m compileall -q src
+  [completed exit=0] python -m ruff check .      -> All checks passed!
+  [completed exit=0] python -m pytest -q         -> 37 passed, 1 warning in 0.10s
+  ```
+
+  (The warning is the read-only sandbox declining to write `.pytest_cache`; it does not affect
+  results.) Two traps cost three rounds getting there, both worth knowing: installing `pytest`
+  machine-scope while its **dependencies** stay user-scope produces
+  `ModuleNotFoundError: No module named 'pluggy'` under codex and nowhere else; and the obvious
+  verification — importing the module and printing `__file__` — cannot detect a successful
+  machine install while a user copy remains, because user site-packages precedes machine
+  site-packages on `sys.path`. Check **disk presence** per scope, not resolution.
+
+  Every codex pass from here is test-backed. The review-dependent conclusions marked weak above
+  were not re-run against the fixed environment.
 
 ---
 
