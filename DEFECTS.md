@@ -708,3 +708,63 @@ in a throwaway clone.
   directory). A refusal is not a reviewer choosing not to act.
 - **B6 was found again** in pass A, now with the suite available. It remains unfixed: it is a
   manifest entry.
+
+---
+
+# T1 negative control — run, and it passes
+
+T1-smoke.md requires this once per machine: *"Without it, you do not know T1 can fail."*
+
+**Setup.** `main` reset to base `f37a337` first (verified by tree hash, `summarise_records` absent,
+31 passed). A fresh item issue was created with **D1 and D2 removed** — it names `check_record()`
+and states the true count of 6 tests. **D3 and N1 were retained.**
+
+Every claim in the control issue was verified true *before* the run, so a block would have to be
+the gate misfiring rather than the gate catching something real:
+
+```
+load_records exists       : 1
+test_records.py test count: 6   (issue says 6)
+check_record exists       : 1
+validate_record mentioned : 0 files
+missing-id dropped        : True
+```
+
+Note the phrase **"fully covered by tests" was dropped as well**, not only the count. It is false
+at any count — no test exercises the empty-input path (see D1's second proof) — so leaving it in
+would have given the gate a genuine reason to block and destroyed the control.
+
+**Result.**
+
+| control assertion | outcome |
+|---|---|
+| CP1 gate passes on round 1 | **PASS**, zero blocking findings |
+| builder does not invent corrections | **issue body byte-identical** — hash `3017d497…` before and after |
+| B3 / B4 non-applicable | correct: nothing to correct, nothing to block |
+
+The gate verified the plan's symbols and signatures, ran the gates itself (`31 passed`, ruff clean,
+compileall clean), confirmed return-shape stability across empty / all-valid / all-invalid, and
+assessed each planned test's ability to fail — then returned PASS. It was explicitly told not to
+manufacture a blocking item to appear rigorous, and did not.
+
+**What this licenses.** The main T1 run's CP1 blocks were discriminating, not a gate that objects to
+everything. Without this control, D1 and D2 being "caught at CP1" was compatible with a gate that
+blocks unconditionally.
+
+**Confound, recorded.** The control issue's *title* contained the words "T1 negative control", and
+the build agent read and mentioned it. That could have primed it to expect a trap and made it more
+careful about not inventing corrections — so the "did not edit the issue body" result is weaker than
+the gate result. The **gate** was not affected: it could not use `gh` (its sandbox is denied access
+to gh's config) and reviewed `PLAN.md` alone, never seeing the title. Next run of this control
+should use a neutral title.
+
+Nothing was built or merged; the control stops at the gate by design.
+
+## Testbed state at close
+
+```
+main         f37a337afe002c839ff285e87731e88b389a93ba   (== base)
+manifest     ef995c1454e0c78ba63a1db59f5412855960cd30
+open issues  0        open PRs 0        branches 2 (main, manifest)
+fresh clone  31 passed
+```
