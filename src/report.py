@@ -27,14 +27,31 @@ def _missing(value: object) -> bool:
     return value is None or value == ""
 
 
+def _quote_tag(tag: str) -> str:
+    # Mirror the upstream exporter's own convention, the same one
+    # src.parse.parse_tags() now honours: a tag containing a comma (or a
+    # literal double quote) is wrapped in double quotes, with any double
+    # quote inside it doubled. Plain tags are left bare. This is what makes
+    # the rendered cell round-trip through parse_tags() back to the original
+    # list -- if it didn't, the column would silently misreport how many
+    # tags a record has, exactly the defect #15 fixed at the parsing end.
+    if "," in tag or '"' in tag:
+        return '"{}"'.format(tag.replace('"', '""'))
+    return tag
+
+
+def _format_tags(tags: list) -> str:
+    return ", ".join(_quote_tag(str(tag)) for tag in tags) if tags else "-"
+
+
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
     if isinstance(value, list):
         # tags is normalised to a list by check_record(); render it as the
-        # comma-joined display string it stands for, not Python's repr of a
-        # list. An empty list carries no tags, which is the same "nothing
-        # here" the rest of the table renders as "-".
-        return ", ".join(str(item) for item in value) if value else "-"
+        # quoted, comma-joined display string it stands for, not Python's
+        # repr of a list. An empty list carries no tags, which is the same
+        # "nothing here" the rest of the table renders as "-".
+        return _format_tags(value)
     return "-" if _missing(value) else str(value)
 
 
