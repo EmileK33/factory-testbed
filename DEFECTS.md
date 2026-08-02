@@ -491,11 +491,19 @@ deterministic when unset **and** when set to any other value).
 | 6 | fixture issue bodies, plan-gate style | 33 (29 ok, 4 fail) | none |
 | 7 | convergence over the fixes | 18 (12 ok, 6 fail) | 1 — real, fixed |
 
-> **`verify.py review` misreports these passes.** It returned `executions=0 (of 0 attempted)`
-> against pass 1's 13 real command executions, because it does not recognise
-> `powershell.exe -Command "python -c ..."` as an execution. Counts above are taken from the raw
-> `command_execution` items in each `--json` stream. Filed against the skills repo rather than
-> worked around here.
+> **`executions=0` on these passes is correct, not a misreport — corrected after re-reading the
+> implementation.** `verify.py` deliberately does not count `python -c` (documented at
+> `verify.py:489-493`): it cannot be told apart from a reader such as
+> `python -c "import json; print(...)"`, and the file chooses to under-report because
+> over-reporting is the silent failure. These passes used `python -c` almost exclusively, so the
+> tool answered its own question correctly. The counts in the table above are raw
+> `command_execution` items, which is the right denominator for "did codex do anything", but they
+> are NOT the same measure as `executions`, and the two should not be read as disagreeing.
+>
+> This was filed as a harness defect (Claude-Code-Source#16) and that filing was wrong; it is
+> closed as not-planned with the measurement. The one genuine defect it surfaced was narrow — the
+> not-found NOTE asserted a PATH cause for a missing runner MODULE — fixed in
+> Claude-Code-Source#17.
 
 ## Anything unproven
 
