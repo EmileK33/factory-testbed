@@ -2,7 +2,13 @@
 
 import pytest
 
-from src.normalise import apply_fees
+from src.normalise import (
+    HANDLING_BP,
+    _flat_component,
+    _handling_component,
+    apply_fees,
+    fee_for,
+)
 from src.rates import to_usd_cents
 from src.records import load_records
 from src.summarise import summarise
@@ -16,6 +22,18 @@ def test_apply_fees_rejects_a_negative_gross_amount():
 def test_apply_fees_charges_the_regional_handling_rate():
     [row] = apply_fees([{"id": "R-9", "amount": 1000, "region": "EU"}])
     assert row["net"] == 1000 - (25 + 150)
+
+
+def test_flat_and_handling_components_sum_to_fee_for():
+    record = {"id": "R-9", "amount": 999, "region": "EU"}
+    assert _flat_component(record) == 25
+    assert _handling_component(record) == 999 * HANDLING_BP["EU"] // 10000 == 149
+    assert _flat_component(record) + _handling_component(record) == fee_for(record)
+
+
+def test_fee_for_raises_on_a_record_missing_region():
+    with pytest.raises(KeyError):
+        fee_for({"id": "R-9", "amount": 1000})
 
 
 def test_summarise_counts_the_feed_it_was_given():
