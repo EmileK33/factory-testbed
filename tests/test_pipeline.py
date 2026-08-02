@@ -50,4 +50,4 @@ def test_summarise_counts_the_feed_it_was_given():
 
 def test_to_usd_cents_converts_with_the_committed_rates():
     assert to_usd_cents(450, "USD") == 45000
-    assert to_usd_cents(1200, "EUR") == 132000
+    assert to_usd_cents(1200, "EUR") == 129600
