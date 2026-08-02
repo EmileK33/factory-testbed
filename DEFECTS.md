@@ -624,3 +624,87 @@ and arguable at the pair level. It was not blocked on twice over: making it prec
 advertise B6 in `main`'s tree, damaging the corpus for T2 and T4, or produce a third reworded
 assertion, which is the specific failure the skill warns about under "prefer SILENCE over a
 reworded assertion".
+
+---
+
+# Post-fix re-review: the two codex PR passes, re-run test-backed
+
+After `pytest` and its five dependencies were installed machine-scope, the codex PR-review passes
+were re-run against merged `main` (`dc3ecc798ce332d1621375eda9847659ff078cf6`). The Claude backstop
+was **not** re-run: it is an ordinary subagent, never sandboxed, and had already executed the suite
+and a 14-mutant battery in the original round.
+
+| pass | executions | pytest invocations | outcome |
+|---|---|---|---|
+| A — diff review, read-only | **9 of 9 attempted** | 9 | 3 gates green, 0 failed-to-collect, all 6 test nodes pass by name, shape stable across empty/all-valid/all-invalid/non-dict; 1 finding = **B6** |
+| B — on-disk mutation, workspace-write, own clone | **19 of 19 attempted** | 19 | **8 mutations, 8 killed by name, 0 survivors** |
+
+Compare with the original round, where the same reviewer managed `executions=1` and could run
+neither `pytest` nor `ruff`.
+
+## What this upgrades from weak evidence to result
+
+- **C3 (reviewer executed)** — was `executions=1`; now 9 and 19.
+- **C6 (files failed to COLLECT reported separately)** — the reviewer now reports it itself:
+  `0`, alongside `37 passed, 0 skipped`.
+- **D3 / the perfect-input path** — previously confirmed by reading; now confirmed by execution
+  across four input classes, keys identical every time.
+- **D4 (base green under full gates)** — now independently re-run by a reviewer rather than only
+  by the orchestrator.
+
+## Mutation results, by test name
+
+Reported per `verify.py mutate`'s format rather than as a bare count, which is banned:
+
+| mutation | killed by |
+|---|---|
+| dropped records counted as valid | 5 of the 6 `test_summarise_records_*` |
+| valid/dropped swapped | 5 of 6 |
+| off-by-one in `total` | all 6 |
+| `dropped` key omitted | all 6 (one via a direct `KeyError`) |
+| `total` hardcoded to `8` | 5 of 6 — **not** `counts_the_live_feed`, whose fixture is 8 rows |
+| `check_record` delegation → naive `is not None` | 4 of 6 |
+| `id` rule special-cased instead of delegated | 2 of 6 |
+| last element skipped | `counts_a_clean_feed` **alone** |
+
+Two single points of failure worth carrying: the last-element-skipped defect is caught by exactly
+one test, and the hardcoded-total defect is invisible to the live-feed test precisely because that
+fixture has 8 rows. An independent Claude battery reached the same conclusion about the same two
+mutations from a different mutation set.
+
+## Two instrument defects the reviewer found in its own tooling
+
+Both are the "a check that lies" class, and both were caught by the reviewer rather than by any
+control shipped with the protocol:
+
+1. **PowerShell `>` re-encodes to UTF-16.** `git show dc3ecc7:src/records.py > src\records.py`
+   produced a file with null bytes that Python could not parse. A restore that corrupts its target
+   is indistinguishable from a restore that worked until the next run fails for the wrong reason.
+   Remedy used: `cmd` redirection, which preserves git's bytes.
+2. **The host temp directory refused writes**, breaking the two `tmp_path` tests and making the
+   first mutation's failure list untrustworthy. The reviewer redirected `TMP`/`TEMP` into its own
+   workspace and re-ran rather than reporting the run as blocked.
+
+## Restore verified independently
+
+Not taken from the reviewer's report:
+
+```
+working tree: 806b395959ac74d12e6f494ce4a96720d8a1ef61
+dc3ecc7 blob: 806b395959ac74d12e6f494ce4a96720d8a1ef61   MATCH
+git status --porcelain --untracked-files=no   -> empty
+python -m pytest -q                           -> 37 passed
+```
+
+`main` on the remote is still `dc3ecc798ce332d1621375eda9847659ff078cf6`; all mutation work happened
+in a throwaway clone.
+
+## Still recorded against these passes
+
+- Pass B's verdict **names no head SHA** — `verify.py review` flagged it, correctly. The SHA was
+  given in its prompt and its restores used it, but the return does not state it, so the verdict is
+  not self-attaching to a commit.
+- Pass B had **2 commands refused** by sandbox policy (both attempts to delete its own temp
+  directory). A refusal is not a reviewer choosing not to act.
+- **B6 was found again** in pass A, now with the suite available. It remains unfixed: it is a
+  manifest entry.
