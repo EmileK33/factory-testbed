@@ -226,3 +226,78 @@ def test_report_tail_after_grouped_table_is_byte_identical_to_pre_change_artifac
     # real before/after check rather than a read-and-eyeball one.
     text = render_report()
     assert text.endswith(PRE_CHANGE_TAIL)
+
+
+def test_report_column_widths_are_global_across_region_groups():
+    # The plan's deliberate choice was widths computed once, globally, across
+    # every accepted record (_column_widths(accepted)) and reused for every
+    # region's _table(group, widths) call, specifically so columns line up
+    # at the same horizontal position across region blocks. Comparing the
+    # regenerated golden artifact to itself cannot police this: a per-group
+    # rewrite (_table(group, _column_widths(group))) still passes
+    # tests/test_golden.py's byte comparison once the artifact is
+    # regenerated under the changed code, because both sides of that
+    # comparison come from the same (broken) renderer. This test derives its
+    # expectation from the rendered text's own structure instead, so it
+    # fails on a per-group-widths renderer without touching the golden file.
+    #
+    # The committed feed (data/records.json) has near-equal name lengths
+    # across regions, so a weak version of this assertion could pass by
+    # coincidence even under per-group widths. This fixture is built
+    # specifically to make global-vs-per-group widths diverge visibly: NA
+    # gets a one-character name (its own narrowest possible column) while EU
+    # gets a much longer one, so a per-group NA table would size its `name`
+    # column to the 4-character field name itself, well short of EU's ~30
+    # characters, and the two groups' header/rule/row lines would no longer
+    # line up.
+    records = [
+        {
+            "id": "R-9101",
+            "name": "A",
+            "amount": 1,
+            "currency": "USD",
+            "region": "NA",
+        },
+        {
+            "id": "R-9102",
+            "name": "A Very Long Company Name Company",
+            "amount": 2,
+            "currency": "EUR",
+            "region": "EU",
+        },
+    ]
+    text = render_report(records=records)
+    lines = text.splitlines()
+
+    region_lines = [line for line in lines if line in ("EU", "NA", "APAC")]
+    assert region_lines == ["EU", "NA"]
+
+    # Each region's header line is the line immediately after its region
+    # code, and the rule line immediately after that (see _table(): header,
+    # then the "----" rule, then data rows). Under global widths these are
+    # character-identical across groups; under per-group widths the NA
+    # group's shorter columns make its header/rule strings shorter than
+    # EU's, and this assertion catches that without ever reading the golden
+    # artifact.
+    eu_index = lines.index("EU")
+    na_index = lines.index("NA")
+    eu_header, eu_rule = lines[eu_index + 1], lines[eu_index + 2]
+    na_header, na_rule = lines[na_index + 1], lines[na_index + 2]
+
+    assert na_header == eu_header
+    assert na_rule == eu_rule
+
+    # Belt-and-braces per the review finding's second suggested form: the
+    # `amount` column (right-aligned, so its label sits flush against the
+    # right edge of its slot) must start at the same character offset in
+    # every group's data row, not just in the already-checked header/rule
+    # lines. The header's "amount" label ends exactly where the currency
+    # column's two-space separator begins, so that end index is the same
+    # boundary a data row's amount cell is right-justified against.
+    amount_label_end = eu_header.index("amount") + len("amount")
+    assert amount_label_end == na_header.index("amount") + len("amount")
+
+    eu_row = lines[eu_index + 3]
+    na_row = lines[na_index + 3]
+    assert eu_row[amount_label_end - 1] == "2"  # R-9102's amount, right-justified to the boundary
+    assert na_row[amount_label_end - 1] == "1"  # R-9101's amount, at the SAME boundary under global widths
