@@ -14,11 +14,20 @@ def summarise(records: list[dict]) -> dict:
     ``{}`` (it reports a *breakdown* of the accepted population, and a caller
     should not have to guess whether an absent key means "no tags" or "counts
     not computed"). Each key's own meaning decides its convention.
+
+    ``by_tag``'s presence is structural, not conditional: it is part of
+    ``result``'s initial construction and mutated in place, rather than
+    assigned by a separate line later that a guard could be wrapped around.
+    This is deliberate -- an "accepted records exist but none of them are
+    tagged" state is reachable (``check_record()`` accepts a record with no
+    ``tags`` column and normalises it to ``[]``) but is not present in any
+    fixture this repo ships, so a conditional attach here would be a guard
+    that only well-formed, untagged-but-accepted input can trip -- exactly
+    the shape least likely to be caught by example-based tests alone.
     """
-    result = {"total": len(records), "accepted": 0}
+    result = {"total": len(records), "accepted": 0, "by_tag": {}}
 
     rejected = []
-    by_tag: dict[str, int] = {}
     for record in records:
         checked = check_record(record)
         if checked is None:
@@ -29,9 +38,8 @@ def summarise(records: list[dict]) -> dict:
             # counts *records carrying a tag*, not tag occurrences, so a
             # record whose tags list repeats a tag still contributes 1.
             for tag in set(checked["tags"]):
-                by_tag[tag] = by_tag.get(tag, 0) + 1
+                result["by_tag"][tag] = result["by_tag"].get(tag, 0) + 1
 
     if rejected:
         result["rejected"] = rejected
-    result["by_tag"] = by_tag
     return result

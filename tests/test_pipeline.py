@@ -96,6 +96,27 @@ def test_summarise_by_tag_is_present_and_empty_for_an_empty_feed():
     assert "rejected" not in counts
 
 
+def test_summarise_by_tag_is_present_and_empty_when_accepted_records_carry_no_tags():
+    # The empty-feed test above covers accepted == 0; it cannot tell an
+    # unconditional attach from one guarded on "no accepted records at all".
+    # This covers the distinct, separately reachable state: accepted > 0 but
+    # by_tag == {}. check_record() accepts a record with no "tags" column at
+    # all and normalises it to [] (see src/validate.py::check_record), so
+    # this is not fiction -- it is simply absent from the committed feed
+    # fixture, which is exactly why it needs its own constructed record here.
+    record = {
+        "id": "R-NOTAG",
+        "name": "No Tag",
+        "amount": 100,
+        "currency": "USD",
+        "region": "NA",
+    }
+    counts = summarise([record])
+    assert counts["accepted"] == 1
+    assert counts["by_tag"] == {}
+    assert "by_tag" in counts
+
+
 def test_to_usd_cents_converts_with_the_committed_rates():
     assert to_usd_cents(450, "USD") == 45000
     assert to_usd_cents(1200, "EUR") == 129600
