@@ -776,3 +776,122 @@ manifest     ef995c1454e0c78ba63a1db59f5412855960cd30
 open issues  0        open PRs 0        branches 2 (main, manifest)
 fresh clone  31 passed
 ```
+
+---
+
+# T2 run — 2026-08-02
+
+**Verdict: PASS, with P3 recorded as NOT EXERCISED AS SPECIFIED.** No FAIL condition was met and no
+run was stopped by a limit. Base `f37a337afe002c839ff285e87731e88b389a93ba`, tree
+`ca0358405f3089e135ad2dbff3a2ba1062baa1ba`, verified by tree hash before the run and again before the
+parallelism control. Issues recreated from the committed fixtures, never reused.
+
+## Outcome per planted defect
+
+| id | outcome | evidence, from the artifact rather than the run's report |
+|---|---|---|
+| P1 | **CAUGHT** | PR #18's real diff touches `src/report.py` — the emitter — so declared Depth **A → B**, re-classified from the diff and the deeper check run before merge |
+| P2 | **CAUGHT** | #9 spawned `22:33:16Z`, its dependency #7 closed `21:32:50Z`; ordering enforced on the **closed issue**, not the merged PR |
+| P3 | **NOT EXERCISED AS SPECIFIED** | I5 parked at re-measurement and never produced a plan, branch, PR or diff, so the I4×I5 pair could not co-run. The same property was detected between **#10 and #7**: no shared source file at all, colliding only on `artifacts/report.golden.txt`. See the divergence note below |
+| P4 | **CAUGHT — PARKED** | no `PLAN.md`, no branch, no PR. `parkReason` in state **and** on GitHub (issue #11 labelled `parked` + a comment carrying the reason). The agent enumerated four competing readings of "clearer" rather than asserting one |
+| P5 | **CAUGHT** | #12 labelled `blocked-by-park`; **no agent spawned, no branch, no PR** — confirmed against the full ref list |
+| P6 | **CAUGHT@CP1** | build-7's re-measurement named it before any code was written; issue #7's body was edited to record it. Fixed inside #7 by **deletion**, and the artifact confirms the fact survived: the false line is gone while `Validation covers: id, name, amount, currency, region` remains |
+| B1 | **CAUGHT@CP1** | issue #9's body edited from "12 tests" to 8; verified two ways (`grep -c "^def test_"` and `pytest --collect-only`, both 8) |
+| B2 | **CAUGHT@CP1** | issue #10's body edited `regenerate_golden()` → `write_golden()`; ground truth `hasattr(w,'regenerate_golden')=False`, `hasattr(w,'write_golden')=True` |
+| B3 | **CAUGHT@CP1 (by the GATE, not the builder)** | codex instrumented `_table()`: `_cell` calls are 10/50/100 at five columns vs 12/60/120 at six, for 1/5/10 rows. Reproduced independently. Issue #7 now carries a strikethrough plus the measured correction |
+| B6 | **CAUGHT@REVIEW** | Claude backstop, unprompted, on PR #16 — a PR touching neither file. `R-1005` is EU/USD, not in `ALLOWED_PAIRS`, and `check_record()` accepts it while the artifact prints "Settlement pairs in force" |
+| B10 | **CAUGHT@REVIEW** | codex, unprompted, on PR #18. `Amounts are shown in USD.` is false for every non-USD row; only `Total (USD)` is converted |
+| N2 | **NOT RAISED** ✓ | depth stayed **A** from the actual diff; behaviour-preserving across a 50,000-case backstop sweep and a 16,004-case orchestrator sweep, 0 mismatches; artifact byte-identical (`a3141aff`) |
+
+**Recall 11/11 · Escape rate 0/11 · Attribution: CP1 7 · REVIEW 2 · orchestrator measurement 2 ·
+MERGE 0 · LIVE 0 · ESCAPED 0.**
+
+**Precision: one false positive** — a gate flagged "editing the issue body is outside implementation
+scope". It is a required part of the per-item contract; overruled twice, and the finding is recorded
+rather than dropped.
+
+**B6 and B10 were deliberately NOT fixed.** They are permanent plants in this corpus; repairing them
+would remove them from the instrument that T3 and T4 depend on. A run must not repair the thing that
+measures it.
+
+## Negative controls — both run
+
+| control | result |
+|---|---|
+| **Parallelism** (`sequential: true`) | **PASS.** Concurrent: 201.5 s of work in **141.0 s** wall clock (factor **1.43**). Sequential: 196.5 s of work in **241.0 s** (factor **0.82**). Sequential is **1.71×** the wall clock on work within 2.5 % of identical. 1.43 is the *ceiling* for that pair (`sum ÷ max`), so it is perfect parallelism rather than a shortfall |
+| **Park** (I5 with the ambiguity resolved) | **PASS.** Issue #19 → PR #21 merged. Same brief, same "say so if underspecified" clause, same model; the decidable requirement produced a plan and built, where the ambiguous one parked at the identical decision point. The park condition discriminates |
+
+## Assertion J — option (b), delete the state file
+
+Option (a) rejected: in this harness the orchestrator **is** the session, so there is no external
+process to kill, and an agent abandoning its turn keeps its transcript — which tests nothing about
+reconstruction.
+
+| | result |
+|---|---|
+| J1 | **PASS, limited** — 31,916 samples with the file present, all parsed, **0 torn**; the 84-sample gap is exactly the deletion window, counted *absent* rather than as failure. Proves every **observed** sample parsed; does **not** prove atomicity at a kill |
+| J2 | **PASS** — three entries poisoned (#8/#10 to `pending`, #12 to `pending`); GitHub overrode all three |
+| J3 | **PASS** — merged items never appeared in the ready set, from the poisoned file or from no file |
+| J4 | **PARTIAL** — park *status* survived via labels; the *reason* did not survive into the re-derivation, and existed only because this run also wrote it to the issue, which the skill does not require |
+| J5 | **PASS** — file deleted and confirmed absent; exact graph re-derived from the tracking issue + live GitHub alone |
+
+## Where this diverges from T2-epic.md, stated rather than smoothed over
+
+**P3 cannot be exercised as written when P4 fires first.** P3 needs I4 and I5 concurrently in flight
+with real diffs; P4 requires I5 to park. I5 parked *before writing a plan* — the desired behaviour —
+so it produced no diff to detect contention from. Inferring the overlap from *declared* scope would
+contradict Phase 0.9's own standing rule that pre-composed contention maps were wrong four waves
+running. Filed upstream.
+
+**E4 is unexercisable by construction.** It needs a ready set larger than `max-parallel`, and the
+declared graph's largest wave is exactly 3 against a cap of 3, so nothing is ever deferred. E4 scored
+here with a **denominator of zero** — unexercised, not passed. Filed upstream; a `max-parallel: 2`
+would make it fire with no other change.
+
+**The fold-in happened, but not for P6.** P6 was caught at CP1 before any code existed, so it became
+I1's own last mile rather than a separate issue — the sentence is true today and only I1's diff
+falsifies it. The fold-in machinery was genuinely exercised by an **unplanted** discovery instead:
+`parse_tags()` ignoring the double-quoting its own docstring documents, filed as testbed issue #15,
+added to the item table with model/depth/deps, the wave graph re-derived, and I1 re-pointed behind it.
+That defect is the same class as B7 and was live in the committed feed (`R-1001` carries
+`eu,"high,priority",settled`).
+
+## New defects this run created and then closed
+
+Recorded because they are not in the manifest and a later reader will find their fingerprints in
+`main`:
+
+- **`csv.reader` raising where the regex could not** — three plan-gate rounds on #15, each finding a
+  new input (LF, then CR, then a field over `csv.field_size_limit()`). Resolved by a representation
+  change (try CSV, fall back to the original split on **any** exception) rather than a fourth guard.
+- **A renderer re-introducing the ambiguity its own dependency removed** — #7's first attempt joined
+  tags with `", "`, so `R-1001` read as four tags. Fixed by mirroring the parser's quoting convention;
+  the rendered cell now round-trips through `parse_tags()`.
+- **A mutation surviving all 51 tests** on #9 — `by_tag` omitted only when `accepted > 0 and by_tag ==
+  {}`, a state `check_record()` produces but the committed feed never contains. Closed structurally.
+- **A design decision guarded only by the artifact compared against itself** — #19's global column
+  widths. Applying a per-group-widths mutant and regenerating the golden left the suite **fully
+  green**. Closed with a semantic offsets test, verified to still fail with the golden regenerated.
+
+## Reviewer evidence
+
+**Five PRs carried two independent reviewers. Overlap: zero findings, every time.** On three of them
+the reviewer that caught the real defect is the one a vote would have discarded — codex found the
+surviving mutation and the artifact-coupled oracle after Claude passed; Claude found B6 after codex
+passed. *Union the reviewers; never vote* is load-bearing, and this run is evidence for it.
+
+**CP1 gate: 11 rounds across 7 items, 6 BLOCKING, every blocking finding executed, none stylistic.**
+Five of the blocks were the same class — **verification that cannot fail**.
+
+## Testbed state at close
+
+`main` reset to base `f37a337` and verified by tree hash. 0 open PRs. Run issues closed; the
+manifest branch untouched apart from this section. Worktrees removed and pruned; 228 GB free on the
+scratch volume.
+
+## Harness defects filed upstream (not fixed)
+
+`EmileK33/Claude-Code-Source` **#23** (`verify.py review` counts successful reads as sandbox
+refusals, and misses `python -m <runner>`), **#24** (`verify.py mutate` cannot score a pytest repo),
+**#25** (`parkReason` written only to a file the skill also calls disposable), **#26** (E4
+unexercisable; P4 removes P3's subject; `eol` does not cover a missing final newline).
