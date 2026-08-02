@@ -48,6 +48,54 @@ def test_summarise_counts_the_feed_it_was_given():
     assert counts["rejected"] == ["<unlabelled>", "R-1007", "R-1008"]
 
 
+def test_summarise_counts_accepted_records_by_tag():
+    # Tags come from check_record()'s normalised, already-split "tags" list
+    # (see src/validate.py::check_record and src/parse.py::parse_tags), so
+    # this also pins that a comma-quoted tag counts as one tag: R-1001 carries
+    # "high,priority" as a single tag, not "high" and "priority" separately.
+    counts = summarise(load_records())
+    assert counts["by_tag"] == {
+        "eu": 2,
+        "high,priority": 1,
+        "settled": 2,
+        "na": 2,
+        "apac": 1,
+        "bulk": 1,
+        "small": 1,
+        "crossborder": 1,
+    }
+
+
+def test_summarise_by_tag_counts_a_repeated_tag_once_per_record():
+    # by_tag counts *records carrying a tag*, not tag occurrences (the
+    # issue's own wording: "the number of accepted records carrying it").
+    # None of the real feed's accepted records repeats a tag within its own
+    # list, so this is built on a constructed record whose raw tags field
+    # produces a repeat through parse_tags: parse_tags('x,x,"x"') returns
+    # ['x', 'x', 'x'].
+    record = {
+        "id": "R-DUP",
+        "name": "Dup",
+        "amount": 100,
+        "currency": "USD",
+        "region": "NA",
+        "tags": 'x,x,"x"',
+    }
+    counts = summarise([record])
+    assert counts["by_tag"] == {"x": 1}
+
+
+def test_summarise_by_tag_is_present_and_empty_for_an_empty_feed():
+    # by_tag uses the opposite presence convention from "rejected": it is
+    # always present, even as {}, rather than omitted when there is nothing
+    # to report. An empty feed has nothing rejected either, so this is also
+    # the input that would let by_tag silently vanish if it copied rejected's
+    # "omit when empty" convention instead of having its own.
+    counts = summarise([])
+    assert counts == {"total": 0, "accepted": 0, "by_tag": {}}
+    assert "rejected" not in counts
+
+
 def test_to_usd_cents_converts_with_the_committed_rates():
     assert to_usd_cents(450, "USD") == 45000
     assert to_usd_cents(1200, "EUR") == 129600
