@@ -13,7 +13,7 @@ from src.records import load_records
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
-REPORTED_FIELDS = ("id", "name", "region", "amount", "currency")
+REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 
 RIGHT_ALIGNED = frozenset({"amount"})
 
@@ -29,6 +29,12 @@ def _missing(value: object) -> bool:
 
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
+    if isinstance(value, list):
+        # tags is normalised to a list by check_record(); render it as the
+        # comma-joined display string it stands for, not Python's repr of a
+        # list. An empty list carries no tags, which is the same "nothing
+        # here" the rest of the table renders as "-".
+        return ", ".join(str(item) for item in value) if value else "-"
     return "-" if _missing(value) else str(value)
 
 
@@ -86,9 +92,12 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
-    lines.append(
-        f"All {len(REPORTED_FIELDS)} reported fields are checked by the validation rules."
-    )
+    # No "All N reported fields are checked by the validation rules." line here.
+    # That was only ever true because REPORTED_FIELDS and validate.VALIDATED_FIELDS
+    # happened to be the same five fields; tags is reported but not one of the
+    # fields check_record() can reject on, so the claim would be false the moment
+    # tags joined REPORTED_FIELDS. The line immediately below states the narrower,
+    # true fact instead of a reworded version of the false one.
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
     lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")

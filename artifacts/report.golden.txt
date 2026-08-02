@@ -1,13 +1,13 @@
 Settlement report
 =================
 
-id      name            region  amount  currency
-------  --------------  ------  ------  --------
-R-1001  Aster Holdings  EU        1200  EUR
-R-1002  Borel Systems   NA         450  USD
-R-1003  Chandra Foods   APAC      9800  JPY
-R-1004  Delta Freight   NA          10  USD
-R-1005  Eiger Metals    EU        2750  USD
+id      name            region  amount  currency  tags
+------  --------------  ------  ------  --------  --------------------------
+R-1001  Aster Holdings  EU        1200  EUR       eu, high,priority, settled
+R-1002  Borel Systems   NA         450  USD       na, settled
+R-1003  Chandra Foods   APAC      9800  JPY       apac, bulk
+R-1004  Delta Freight   NA          10  USD       na, small
+R-1005  Eiger Metals    EU        2750  USD       eu, crossborder
 
 Net after fees
 --------------
@@ -24,6 +24,5 @@ Records rejected: 3
 Unlabelled records: Fennel Labs
 Total (USD): 4569.70
 Amounts are shown in USD.
-All 5 reported fields are checked by the validation rules.
 Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY
 Validation covers: id, name, amount, currency, region
