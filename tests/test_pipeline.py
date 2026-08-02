@@ -32,6 +32,11 @@ def test_flat_and_handling_components_sum_to_fee_for():
 
 
 def test_fee_for_raises_on_a_record_missing_region():
+    # Pins a deliberate ruling, not a live path: check_record() guarantees every
+    # record fee_for() is called with today already has a region, so this state
+    # is currently unreachable in production. Keep this test anyway — fee_for's
+    # signature (record: dict) enforces nothing, so a future second caller could
+    # reach it, and this is the guard against silently swallowing that case.
     with pytest.raises(KeyError):
         fee_for({"id": "R-9", "amount": 1000})
 
