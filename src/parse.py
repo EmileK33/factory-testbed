@@ -41,7 +41,11 @@ def parse_tags(raw: str | None) -> list[str]:
     if not isinstance(raw, str) or not raw:
         return []
     try:
-        fields = [field for row in csv.reader(io.StringIO(raw)) for field in row]
+        fields = [
+            field
+            for row in csv.reader(io.StringIO(raw), skipinitialspace=True)
+            for field in row
+        ]
         return [field.strip() for field in fields if field.strip()]
     except Exception:
         # Deliberately broad: check_record() promises a normalised record or

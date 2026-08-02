@@ -96,3 +96,27 @@ def test_parse_tags_pins_the_shape_of_a_malformed_doubled_quote_mid_field_row():
     # No such row exists in data/records.json today; this documents the
     # decision rather than leaving the shape to accident.
     assert parse_tags('a,""b"",c') == ["a", 'b""', "c"]
+
+
+def test_parse_tags_keeps_a_quoted_comma_containing_tag_one_tag_with_leading_space():
+    # A space between the separator and the opening quote used to defeat the
+    # fix outright: without skipinitialspace=True, csv.reader no longer
+    # recognises the quote as the start of a quoted field once it isn't the
+    # very first character, so the literal '"' characters leaked into the
+    # tag values instead of being consumed as quoting -- worse than the
+    # pre-fix code, which at least stripped them. skipinitialspace=True is
+    # what discriminates this case; without it this assertion fails.
+    assert parse_tags('eu, "high,priority",settled') == ["eu", "high,priority", "settled"]
+
+
+def test_parse_tags_documents_the_fallback_cost_of_a_bare_cr_with_a_quoted_comma():
+    # Deliberate, documented limitation, not a defect: a bare CR forces the
+    # no-quote-awareness fallback (see the CR tests above), so a quoted comma
+    # elsewhere in the same string is NOT respected once the fallback
+    # triggers -- the tag is split like an unquoted one. This is the cost of
+    # the totality guarantee: io.StringIO(raw, newline='') would avoid the
+    # fallback here, but it also turns a *bare* CR/LF inside an otherwise
+    # plain tag into an unintended row break for input that has no quoting at
+    # all, which is a worse, undisclosed violation of the "comma-separated"
+    # contract than this disclosed, tested fallback behaviour.
+    assert parse_tags('eu,"high,priority",settled\rx') == ["eu", "high", "priority", "settled\rx"]
