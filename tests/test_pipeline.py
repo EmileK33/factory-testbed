@@ -40,3 +40,39 @@ def test_region_of_falls_back_to_unknown_when_the_field_is_absent():
     from src.summarise import region_of
 
     assert region_of({}) == "unknown"
+
+
+def test_render_report_drops_a_credit_record_without_failing_the_render():
+    """A credit in the feed must be rejected at the contract boundary.
+
+    render_report() hands accepted records straight to apply_fees(), which raises
+    on a negative gross — so the report only renders while check_record() drops
+    credits first.
+    """
+    from src.report import render_report
+
+    feed = [
+        {
+            "id": "R-2001",
+            "name": "Wells Trading",
+            "amount": 500,
+            "currency": "USD",
+            "region": "NA",
+            "tags": "na",
+        },
+        {
+            "id": "R-2002",
+            "name": "Credit Note",
+            "amount": -750,
+            "currency": "USD",
+            "region": "NA",
+            "tags": "na",
+        },
+    ]
+
+    report = render_report(feed)
+
+    assert "Records read: 2" in report
+    assert "Records accepted: 1" in report
+    assert "Records rejected: 1" in report
+    assert "R-2002" not in report
