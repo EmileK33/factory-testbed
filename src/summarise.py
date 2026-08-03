@@ -7,7 +7,16 @@ from src.validate import check_record
 
 def summarise(records: list[dict]) -> dict:
     """Return the feed's counts, along with the ids that were rejected."""
-    result = {"total": len(records), "accepted": 0, "source": "branch-a"}
+<<<<<<< HEAD
+    result = {
+        "total": len(records),
+        "accepted": 0,
+        "source": "branch-a",
+        "origin": "branch-b",
+    }
+=======
+    result = {"total": len(records), "accepted": 0, "origin": "branch-b"}
+>>>>>>> 3424b47 (T3/R7 branch B: label the summary with its origin)
 
     rejected = []
     for record in records:
