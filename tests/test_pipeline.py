@@ -28,3 +28,10 @@ def test_summarise_counts_the_feed_it_was_given():
 def test_to_usd_cents_converts_with_the_committed_rates():
     assert to_usd_cents(450, "USD") == 45000
     assert to_usd_cents(1200, "EUR") == 132000
+
+
+def test_r7_origin_label_is_carried_on_the_summary():
+    """T3/R7: a further commit on a conflicted branch — CI must produce no run."""
+    from src.summarise import summarise
+
+    assert summarise([])["origin"] == "branch-b"
