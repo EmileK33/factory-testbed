@@ -47,12 +47,6 @@ def check_record(record: object) -> dict | None:
     if not _is_whole_number(record["amount"]):
         return None
 
-    # The feed does not carry credits, and everything downstream of here assumes
-    # it: apply_fees() raises on a negative gross. Rejecting it at the contract
-    # boundary is what keeps a rendered report from failing halfway through.
-    if record["amount"] < 0:
-        return None
-
     return {
         "id": record["id"],
         "name": record["name"],
