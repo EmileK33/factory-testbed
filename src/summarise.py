@@ -19,3 +19,9 @@ def summarise(records: list[dict]) -> dict:
     if rejected:
         result["rejected"] = rejected
     return result
+
+
+def region_of(record: dict) -> str:
+    """Return the record's region, or "unknown" when the field is absent."""
+    region = record.get("region")
+    return region if region else "unknown"

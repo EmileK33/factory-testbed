@@ -28,3 +28,15 @@ def test_summarise_counts_the_feed_it_was_given():
 def test_to_usd_cents_converts_with_the_committed_rates():
     assert to_usd_cents(450, "USD") == 45000
     assert to_usd_cents(1200, "EUR") == 132000
+
+
+def test_region_of_returns_the_declared_region():
+    from src.summarise import region_of
+
+    assert region_of({"region": "emea"}) == "emea"
+
+
+def test_region_of_falls_back_to_unknown_when_the_field_is_absent():
+    from src.summarise import region_of
+
+    assert region_of({}) == "unknown"
