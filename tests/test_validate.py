@@ -48,8 +48,9 @@ def test_check_record_rejects_a_boolean_amount():
     assert check_record({**CLEAN, "amount": 1}) is not None
 
 
-def test_check_record_rejects_a_negative_amount():
-    assert check_record({**CLEAN, "amount": -1}) is None
+def test_check_record_accepts_a_negative_amount():
+    """Sign is not a contract concern: apply_fees() owns the credit rule."""
+    assert check_record({**CLEAN, "amount": -1})["amount"] == -1
     assert check_record({**CLEAN, "amount": 0}) is not None
 
 
