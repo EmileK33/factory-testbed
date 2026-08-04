@@ -14,6 +14,7 @@ the gates; only a change spanning rows needs the whole suite.
 | report rendering | `src/report.py` | `tests/test_report.py`, `tests/test_golden.py` | **any change here changes an emitted artifact** |
 | the committed artifact | `artifacts/report.golden.txt` | `tests/test_golden.py` | byte-for-byte; regenerate with `python -m tools.write_golden` |
 | the known flake | `tests/test_flaky.py` | itself | see CLAUDE.md; gated on `FACTORY_TESTBED_FLAKE` |
+| CSV export/import, and its committed artifact | `src/export_csv.py`, `src/import_csv.py`, `artifacts/export.golden.csv` | `tests/test_export.py` | round-trip invariant (`parse_export(render_export(r)) == r`); `tags` is list-valued; artifact compared byte-for-byte, regenerate with `python -m tools.write_export_golden` |
 
 ## Running a subset
 
