@@ -4,10 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from src.export_csv import render_export
-from src.import_csv import parse_export
+from src.export_csv import FIELDNAMES, render_export
+from src.import_csv import EXPECTED_FIELDNAMES, parse_export
 from src.records import load_records
 from src.validate import check_record
+from tools.write_export_golden import GOLDEN_PATH as TOOL_GOLDEN_PATH
+from tools.write_export_golden import write_export_golden
 
 GOLDEN_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "export.golden.csv"
 
@@ -66,6 +68,35 @@ def test_export_round_trips_the_whole_live_feed():
 )
 def test_export_round_trips_each_accepted_live_record(record):
     assert parse_export(render_export([record])) == [record]
+
+
+# --- type preservation, not just dict equality ---------------------------------------------
+#
+# `==` alone does not pin type: 1200 == 1200.0 and 1 == True in Python, so a decoder that
+# quietly widened int -> float, or collapsed 1 -> True, would pass every round-trip test
+# above without being noticed. These assert the concrete type, not just equality.
+
+
+def test_round_trip_preserves_the_amount_as_an_int_not_a_float():
+    row = _base_row(id="R-9023", amount=1200)
+    result = parse_export(render_export([row]))[0]
+    assert type(result["amount"]) is int
+    assert result["amount"] == 1200
+
+
+def test_round_trip_does_not_confuse_an_amount_of_one_with_boolean_true():
+    # isinstance(True, int) is True, so an == check alone cannot tell "amount is 1" apart
+    # from "amount is True". type() can.
+    row = _base_row(id="R-9024", amount=1)
+    result = parse_export(render_export([row]))[0]
+    assert type(result["amount"]) is int
+    assert not isinstance(result["amount"], bool)
+
+
+def test_round_trip_preserves_tags_as_a_list_not_some_other_sequence():
+    row = _base_row(id="R-9025", tags=["a", "b"])
+    result = parse_export(render_export([row]))[0]
+    assert type(result["tags"]) is list
 
 
 # --- render_export(rows) does not validate, and only reads the six-column contract -------
@@ -172,3 +203,65 @@ def test_render_export_raises_a_clear_error_for_a_non_serialisable_value():
     row = _base_row(id="R-9022", tags={"not", "json", "serialisable"})
     with pytest.raises(TypeError, match="export column 'tags'"):
         render_export([row])
+
+
+def test_render_export_of_an_explicit_empty_list_does_not_fall_back_to_the_live_feed():
+    # render_export([]) is an explicit "export nothing", not "no argument was given" --
+    # `if records is None` must tell those apart. Header-only output, zero data rows.
+    text = render_export([])
+    assert text == ",".join(FIELDNAMES) + "\n"
+    assert parse_export(text) == []
+
+
+def test_parse_export_of_empty_text_returns_no_records():
+    assert parse_export("") == []
+
+
+def test_parse_export_raises_a_clear_error_for_a_corrupt_cell():
+    # Hand-built, not produced by render_export: the "id" cell's wire text ("not-json") is
+    # not valid JSON, unlike anything render_export would ever emit.
+    text = 'id,name,region,amount,currency,tags\nnot-json,"x","x",1,"x",[]\n'
+    with pytest.raises(ValueError, match="not valid JSON"):
+        parse_export(text)
+
+
+def test_parse_export_rejects_a_header_that_does_not_match_the_six_column_contract():
+    text = "wrong,name,region,amount,currency,tags\n"
+    with pytest.raises(ValueError, match="does not match the expected columns"):
+        parse_export(text)
+
+
+def test_import_csvs_expected_fieldnames_constant_matches_export_csvs_fieldnames():
+    # The two modules deliberately keep separate copies of the six-column contract (see
+    # src/import_csv.py's module docstring for why); pin that the copies agree.
+    assert EXPECTED_FIELDNAMES == FIELDNAMES
+
+
+def test_parse_export_skips_a_blank_line_between_data_rows_not_just_a_trailing_one():
+    row_a = _base_row(id="R-9027")
+    row_b = _base_row(id="R-9028")
+    header_a, line_a = render_export([row_a]).splitlines()
+    _, line_b = render_export([row_b]).splitlines()
+    text = f"{header_a}\n{line_a}\n\n{line_b}\n"
+    assert parse_export(text) == [row_a, row_b]
+
+
+def test_round_trip_preserves_non_ascii_text():
+    row = _base_row(id="R-9029", name="Müller Ω 株式会社")
+    assert parse_export(render_export([row])) == [row]
+
+
+# --- tools/write_export_golden.py -----------------------------------------------------------
+
+
+def test_write_export_golden_default_target_is_the_committed_artifact_path():
+    assert TOOL_GOLDEN_PATH == GOLDEN_PATH
+
+
+def test_write_export_golden_reproduces_the_committed_artifact(tmp_path):
+    # A nested, not-yet-existing directory forces write_export_golden's mkdir(parents=True)
+    # to actually run; a dropped mkdir would raise FileNotFoundError here.
+    target = tmp_path / "nested" / "export.golden.csv"
+    written_path = write_export_golden(target)
+    assert written_path == target
+    assert target.read_bytes() == GOLDEN_PATH.read_bytes()
