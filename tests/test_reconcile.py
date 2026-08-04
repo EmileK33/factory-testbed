@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.reconcile import settlement_total_cents
+from src.records import load_records
 
 # A single, cleanly accepted NA/USD record. Fee = FLAT_FEE (25) + 500bp of the
 # gross (1000 * 500 // 10000 = 50), so net = 1000 - 75 = 925 USD, which
@@ -73,4 +74,8 @@ def test_settlement_total_cents_of_an_empty_feed_is_zero():
 
 
 def test_settlement_total_cents_of_none_input_defaults_to_the_committed_feed():
-    assert settlement_total_cents(None) == settlement_total_cents()
+    # Compare against the feed loaded EXPLICITLY, not against another defaulted
+    # call: settlement_total_cents(None) and settlement_total_cents() are the
+    # same call, so comparing them asserts nothing about where the default
+    # comes from and the test could not fail.
+    assert settlement_total_cents(None) == settlement_total_cents(load_records())
