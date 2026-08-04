@@ -43,9 +43,18 @@ def test_check_record_rejects_an_unknown_currency():
     assert check_record({**CLEAN, "currency": "GBP"}) is None
 
 
+def test_check_record_rejects_an_unknown_region():
+    assert check_record({**CLEAN, "region": "LATAM"}) is None
+
+
 def test_check_record_rejects_a_boolean_amount():
     assert check_record({**CLEAN, "amount": True}) is None
     assert check_record({**CLEAN, "amount": 1}) is not None
+
+
+def test_check_record_rejects_a_non_integer_amount():
+    assert check_record({**CLEAN, "amount": 500.5}) is None
+    assert check_record({**CLEAN, "amount": "500"}) is None
 
 
 def test_check_record_rejects_a_negative_amount():
@@ -58,3 +67,9 @@ def test_settlement_pairs_are_configured():
     assert ("EU", "EUR") in validate.ALLOWED_PAIRS
     assert ("NA", "USD") in validate.ALLOWED_PAIRS
     assert ("APAC", "JPY") in validate.ALLOWED_PAIRS
+
+
+def test_check_record_rejects_a_non_dict_record():
+    assert check_record("not a dict") is None
+    assert check_record(["id", "name", "amount", "currency", "region"]) is None
+    assert check_record(None) is None
