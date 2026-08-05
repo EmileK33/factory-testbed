@@ -73,8 +73,10 @@ def test_summarise_records_when_every_record_is_invalid():
 
 
 def test_summarise_records_matches_the_real_feed():
-    # Ground truth pinned independently by
-    # tests/test_pipeline.py::test_summarise_counts_the_feed_it_was_given.
+    # These counts are NOT independently derived. tests/test_pipeline.py's
+    # equivalent pin routes through the same check_record(), so the two agree
+    # by construction and neither is ground truth for the other: if the feed
+    # contract changes, both move together and neither notices.
     assert summarise_records(load_records()) == {"total": 8, "valid": 5, "dropped": 3}
 
 
