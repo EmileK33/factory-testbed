@@ -112,15 +112,30 @@ Codex reviewed `src/validate.py` twice and did not report this rule as wrong or 
 
 ## T2 — epic tier
 
+> **Corpus era: `T2-epic.md` at `b130717` or later — the NINE-item corpus.** Recorded because this
+> section was twice left describing a corpus two revisions behind (`#75`), and a run scored against
+> a stale key gets a confident wrong answer rather than a gap. Check with
+> `git log -1 --format=%h -- skills/factory/tests/T2-epic.md` and, if it names an earlier commit
+> than `b130717`, **this section does not describe the tier you are running.**
+>
+> What changed and when, so a future divergence is legible rather than mysterious:
+> `#26` added I7 and re-pointed I6's edges, moving **P3 from I4×I5 to I4×I7**; `#59` added I8 and I9
+> to give wave 3 three unequally-overlapping siblings, adding **P8a/P8b/P8c**. Item count, wave
+> composition and spend all moved at each step, so T2 results compare only within one era.
+
 | id | lives in | should catch at | found by codex |
 |---|---|---|---|
 | P1 | `tests/fixtures/t2/I1.md` + emitter | depth re-classification | n/a (a depth judgement, not a code defect) |
 | P2 | `tests/fixtures/t2/I3.md` | dependency ordering | **yes** |
-| P3 | I4 vs I5 file sets | merge ordering | n/a (a contention property) |
+| P3 | **I4 vs I7** file sets | merge ordering / contention | n/a (a contention property) |
 | P4 | `tests/fixtures/t2/I5.md` | PARK | n/a (ambiguity, by construction) |
 | P5 | `tests/fixtures/t2/I6.md` | blocked-by-park | n/a |
 | P6 | `src/report.py` (latent) | fold-in / artifact read | no — it is invisible until I1 merges |
+| **P8a** | `tests/fixtures/t2/I8.md` + `src/records.py` | merge **ordering** (wave 3, merges FIRST) | not yet run |
+| **P8b** | `tests/fixtures/t2/I9.md` + `src/summarise.py` | merge **ordering** (wave 3, merges LAST) | not yet run |
+| **P8c** | `tests/fixtures/t2/I3.md` + `src/summarise.py` | merge **ordering** (wave 3, the MIDDLE) | not yet run |
 | N2 | `tests/fixtures/t2/I2.md` (null control) | must not be raised | not raised ✓ |
+| **U1** | `src/validate.py` (**UNPLANTED**, pre-existing) | any reviewer reasoning about rejections | not yet run |
 
 ### P1 — I1's diff touches what the tool emits, so Depth A must become B
 
@@ -148,13 +163,24 @@ $ grep -n "tags" artifacts/report.golden.txt
 > include `tags`. … A builder trusting this would assume I1 already landed and might build summary
 > behavior against a nonexistent report column.
 
-### P3 — I4 and I5 collide only on the regenerated artifact
+### P3 — I4 and I7 collide only on the regenerated artifact
+
+**Re-pointed from I4×I5 by `#26`, and the reason is the important part:** P4 requires I5 to **park**
+on ambiguity, and the better the factory behaves the earlier that park lands — at re-measurement,
+before `PLAN.md`, producing no plan, no branch, no PR and **no diff**. So P3's subject disappeared
+exactly when P4 succeeded, and the two plants were scoring each other. I7 is the half parking cannot
+remove: same artifact, disjoint source, concrete enough that parking it would itself be a defect.
 
 ```
 I4 files : ['artifacts/report.golden.txt', 'data/rates.json']
-I5 files : ['artifacts/report.golden.txt', 'src/report.py']
+I7 files : ['artifacts/report.golden.txt', 'data/records.json']
 overlap  : ['artifacts/report.golden.txt']      <- no source file in common
 ```
+
+Both items are **data** corrections that re-emit the same committed artifact, which is what makes
+the contention real rather than nominal, and what makes it invisible to any check comparing *source*
+paths. Score the **disjointness**, not the literal list: a correct fix may reach a path this file did
+not predict.
 
 And a rates-only edit really does move the artifact (so the contention is real, not nominal):
 
@@ -210,6 +236,101 @@ artifact byte-identical: YES
 ```
 
 Raising I2 above Depth A is a false positive.
+
+### P8a / P8b / P8c — wave 3's three siblings, with UNEQUAL overlaps
+
+Added by `#59`. Before it, wave 3 held one item and **every earlier version of this tier scored H2
+with a denominator of zero** — `run-wave` Phase D states the ordering rule as *"Merge order for
+**N>2** PRs"*, so with two it does not engage at all, and two siblings always overlap symmetrically.
+
+The profile the three must produce, **confirmed at run time from the real diffs, never from the
+issue bodies**:
+
+| item | plant | shared paths | files | position |
+|---|---|---|---|---|
+| I8 | **P8a** | **0** — isolated | 2 | merges **FIRST** |
+| I3 | **P8c** | 1 (with I9, on `src/summarise.py`) | 2 | the **MIDDLE** |
+| I9 | **P8b** | 1 (with I3, on `src/summarise.py`) | 4+ | merges **LAST** |
+
+**Neither key alone yields the whole order** — overlap fixes only the first (I3 and I9 tie at 1) and
+footprint only the last (I8 and I3 tie at 2). Together they give `I8, I3, I9`, and they do not
+disagree. That is a property of *this* trio, not of three PRs in general.
+
+**The collision is deliberately undeclared.** I9's body states a *report footer* requirement and
+**must not name `src/summarise.py`** — a collision readable off the issue text can be composed around
+without measuring anything, which Phase 0.9 forbids. It rests on the from-the-summary clause, and the
+premise that "only `summarise()` knows what was rejected" is **false against this tree** — proof:
+
+```
+$ grep -n "rejected" src/report.py
+64:    rejected = len(raw) - len(accepted)
+80:    lines.append(f"Records rejected: {rejected}")
+$ grep -c "^from src.summarise\|^import src.summarise" src/report.py
+0
+```
+
+`render_report()` already computes and emits the count itself and does not import `summarise` at all,
+so a renderer can answer the whole item without going near it. What forces the collision is the
+requirement that the **reasons** come from the summary: `summarise()` returns rejected **ids and no
+reasons**, and `check_record()` returns a bare `None`, so answering *"and why"* means extending
+`summarise()` — the same function I3 extends.
+
+**Treat the plant as LIKELY, NOT FORCED.** If the three real diffs come out mutually disjoint, or no
+two were ever simultaneously mergeable, **H2 is INCONCLUSIVE — never PASS.** There was no order to
+get wrong, which is the exact defect `#59` filed.
+
+### U1 (UNPLANTED, pre-existing) — `ALLOWED_PAIRS` is decorative
+
+**Nobody planted this. It is a real defect in the testbed corpus**, recorded here so that a run which
+finds it can score it as a **true positive** rather than losing precision for being right (`#75`).
+
+`src/validate.py` declares the legal region/currency combinations and **nothing enforces them**.
+`check_record()` validates the two fields *separately*:
+
+```
+$ grep -n "REGION_CODES\|CURRENCY_CODES" src/validate.py
+13:REGION_CODES = ("EU", "NA", "APAC")
+14:CURRENCY_CODES = ("EUR", "USD", "JPY")
+41:    if record["region"] not in REGION_CODES:
+44:    if record["currency"] not in CURRENCY_CODES:
+
+$ grep -rn "ALLOWED_PAIRS" src/ tests/ --include=*.py
+src/report.py:13:from src.validate import ALLOWED_PAIRS, check_record
+src/report.py:92:    pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
+src/validate.py:4:region/currency combinations; see ``ALLOWED_PAIRS``.
+src/validate.py:19:ALLOWED_PAIRS = (("EU", "EUR"), ("NA", "USD"), ("APAC", "JPY"))
+tests/test_validate.py:57:    assert hasattr(validate, "ALLOWED_PAIRS")
+tests/test_validate.py:58:    assert ("EU", "EUR") in validate.ALLOWED_PAIRS
+tests/test_validate.py:59:    assert ("NA", "USD") in validate.ALLOWED_PAIRS
+tests/test_validate.py:60:    assert ("APAC", "JPY") in validate.ALLOWED_PAIRS
+```
+
+The two fields are checked **independently** (lines 41 and 44); no line anywhere reads a *pair*.
+`src/report.py:92` is the only consumer and it only prints. `tests/test_validate.py:57-60` asserts
+the constant **exists** and contains the right tuples — never that anything obeys them.
+
+Consequence, measured — the committed artifact asserts a rule the code does not apply:
+
+```
+$ python -c "from src.records import load_records; from src.validate import check_record, ALLOWED_PAIRS
+r=[x for x in load_records() if x.get('id')=='R-1005'][0]
+print(r['region'], r['currency'], 'in ALLOWED_PAIRS:', (r['region'],r['currency']) in ALLOWED_PAIRS,
+      'ACCEPTED:', check_record(r) is not None)"
+EU USD in ALLOWED_PAIRS: False ACCEPTED: True
+```
+
+So **R-1005 (EU/USD) is accepted** while the golden prints `Settlement pairs in force: EU/EUR,
+NA/USD, APAC/JPY`. Same *shape* as the planted P6 — a false sentence in emitted output — and no
+planted-defect row covers it.
+
+**Why it matters to T2 in particular:** I9 asks the report to say **why** records were rejected, so
+an item or reviewer reasoning about rejections is likely to walk into it. Score it **CAUGHT (U1,
+unplanted, true positive)** — it must not count against precision, and it must not be counted toward
+recall either, since recall's denominator is what was *planted*.
+
+**Do not fix it in the corpus before a run.** Fixing it moves the golden artifact and changes the
+31-test baseline, which invalidates the fixtures and the baseline the tier is scored against. It is
+recorded, not repaired, deliberately.
 
 ---
 
