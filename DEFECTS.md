@@ -136,6 +136,7 @@ Codex reviewed `src/validate.py` twice and did not report this rule as wrong or 
 | **P8c** | `tests/fixtures/t2/I3.md` + `src/summarise.py` | merge **ordering** (wave 3, the MIDDLE) | not yet run |
 | N2 | `tests/fixtures/t2/I2.md` (null control) | must not be raised | not raised ✓ |
 | **U1** | `src/validate.py` (**UNPLANTED**, pre-existing) | any reviewer reasoning about rejections | not yet run |
+| **U2** | `tests/fixtures/t2/I4.md` (**UNPLANTED here**, pre-existing) | Phase 0.75 req 1 re-measurement | not yet run |
 
 ### P1 — I1's diff touches what the tool emits, so Depth A must become B
 
@@ -331,6 +332,37 @@ recall either, since recall's denominator is what was *planted*.
 **Do not fix it in the corpus before a run.** Fixing it moves the golden artifact and changes the
 31-test baseline, which invalidates the fixtures and the baseline the tier is scored against. It is
 recorded, not repaired, deliberately.
+
+### U2 (UNPLANTED *in T2*) — I4 names a function that does not exist
+
+`tests/fixtures/t2/I4.md` tells the implementer:
+
+> `tools/write_golden.py` exposes `regenerate_golden()`; call that rather than writing
+> `artifacts/report.golden.txt` by hand.
+
+There is no such function:
+
+```
+$ grep -n "^def " tools/write_golden.py
+17:def write_golden(path: str | Path | None = None) -> Path:
+$ grep -rn "regenerate_golden" --include=*.py .
+(no output)
+```
+
+**This is the same defect as T4's planted `B2`**, sitting in a T2 fixture where no T2 manifest row
+covers it. Whether it was deliberately seeded in I4 or bled across from the T4 corpus is not
+recorded anywhere, and this file will not guess.
+
+**Score it as CAUGHT (U2, unplanted, true positive) if a run's Phase 0.75 re-measurement corrects
+it** — which is exactly what that requirement exists to do, so a healthy run probably *will*. It must
+not count against precision, and it must not count toward recall, whose denominator is what was
+planted for T2.
+
+**Left unrepaired**, and for a different reason than U1: I4 is pre-existing corpus, T4 reuses these
+fixtures, and editing an issue body mid-stream is what `T2-epic.md` calls "how a benchmark silently
+stops being a comparison." The new I7/I8/I9 bodies added at `3d22b2f` deliberately do **not**
+reproduce the claim — they use `python -m tools.write_golden`, the invocation `CLAUDE.md` documents —
+so the discrepancy is now visible *between* fixtures rather than uniform across them.
 
 ---
 
