@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.records import load_records
+from src.records import load_records, summarise_records
 
 
 def test_load_records_returns_a_list_of_dicts():
@@ -43,3 +43,49 @@ def test_load_records_returns_independent_copies():
 
 def test_load_records_keeps_the_row_with_no_id():
     assert any("id" not in record for record in load_records())
+
+
+VALID_RECORD = {
+    "id": "R-2001",
+    "name": "Test Co",
+    "amount": 500,
+    "currency": "USD",
+    "region": "NA",
+    "tags": "na,test",
+}
+
+
+def test_summarise_records_of_an_empty_list():
+    # A key that only appears when the collection is non-empty is the
+    # specific defect this test exists to catch, so assert the full dict —
+    # not just that "dropped" equals 0, but that it is present at all.
+    assert summarise_records([]) == {"total": 0, "valid": 0, "dropped": 0}
+
+
+def test_summarise_records_when_every_record_is_valid():
+    records = [VALID_RECORD, {**VALID_RECORD, "id": "R-2002"}]
+    assert summarise_records(records) == {"total": 2, "valid": 2, "dropped": 0}
+
+
+def test_summarise_records_when_every_record_is_invalid():
+    records = [{**VALID_RECORD, "currency": "GBP"}, {**VALID_RECORD, "amount": -1}]
+    assert summarise_records(records) == {"total": 2, "valid": 0, "dropped": 2}
+
+
+def test_summarise_records_matches_the_real_feed():
+    # Ground truth pinned independently by
+    # tests/test_pipeline.py::test_summarise_counts_the_feed_it_was_given.
+    assert summarise_records(load_records()) == {"total": 8, "valid": 5, "dropped": 3}
+
+
+def test_summarise_records_counts_a_record_missing_its_id_as_dropped():
+    unlabelled = {key: value for key, value in VALID_RECORD.items() if key != "id"}
+    assert summarise_records([unlabelled]) == {"total": 1, "valid": 0, "dropped": 1}
+
+
+def test_summarise_records_counts_a_non_dict_element_as_dropped():
+    assert summarise_records([None, "not a record", 42]) == {
+        "total": 3,
+        "valid": 0,
+        "dropped": 3,
+    }
