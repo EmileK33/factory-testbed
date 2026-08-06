@@ -1,7 +1,10 @@
 """Validation rules for the settlement feed.
 
-The feed contract fixes both the accepted codes and the accepted
-region/currency combinations; see ``ALLOWED_PAIRS``.
+The feed contract fixes the accepted region and currency codes (see
+``REGION_CODES`` / ``CURRENCY_CODES``), checked independently below.
+``ALLOWED_PAIRS`` declares the region/currency combinations the contract
+would like to see, but nothing in this module enforces it - see the note on
+``ALLOWED_PAIRS`` itself.
 """
 
 from __future__ import annotations
@@ -13,9 +16,12 @@ VALIDATED_FIELDS = ("id", "name", "amount", "currency", "region")
 REGION_CODES = ("EU", "NA", "APAC")
 CURRENCY_CODES = ("EUR", "USD", "JPY")
 
-# The settlement contract only clears a record when its region and currency
-# form one of these pairs. A region and a currency that are each individually
-# recognised are not sufficient.
+# Declared region/currency combinations the feed contract calls out as
+# desirable. NOT currently enforced: evaluate_record() below checks region
+# and currency independently, never as a pair, so e.g. ("EU", "USD") clears
+# validation even though it is not in this tuple. src/report.py's "Settlement
+# pairs" line must stay honest about that gap - see
+# tests/test_report.py::test_pairs_claim_matches_enforcement.
 ALLOWED_PAIRS = (("EU", "EUR"), ("NA", "USD"), ("APAC", "JPY"))
 
 
