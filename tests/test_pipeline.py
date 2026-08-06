@@ -102,16 +102,14 @@ def test_summarise_counts_accepted_records_by_tag():
     # not re-derived by calling check_record()/parse_tags() here - comparing
     # the implementation to itself would pass even if both sides shared a
     # mis-parse. R-1001's tags column is quoted ('eu,"high,priority",settled')
-    # and src/parse.py has a known mis-parse of quoted commas (tracked
-    # separately, see tests/test_report.py), so it splits into FOUR tags
-    # ("eu", "high", "priority", "settled") rather than three - by_tag
-    # inherits that as-is. Fennel Labs (no id) is rejected and must not
-    # contribute its "eu"/"unlabelled" tags to the counts.
+    # and src/parse.py now honours that quoting (issue #87), so it splits
+    # into THREE tags ("eu", "high,priority", "settled"), and by_tag inherits
+    # that. Fennel Labs (no id) is rejected and must not contribute its
+    # "eu"/"unlabelled" tags to the counts.
     counts = summarise(load_records())
     assert counts["by_tag"] == {
         "eu": 3,
-        "high": 1,
-        "priority": 1,
+        "high,priority": 1,
         "settled": 2,
         "na": 3,
         "apac": 1,

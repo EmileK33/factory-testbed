@@ -1,7 +1,5 @@
 """Tests for the rendered settlement report."""
 
-import pytest
-
 from src.records import load_records
 from src.report import REPORTED_FIELDS, render_report
 from src.validate import check_record
@@ -49,16 +47,9 @@ def test_report_renders_a_quoted_tag_as_the_feed_declares_it():
     # R-1001's tags column is 'eu,"high,priority",settled'. parse.py's own
     # docstring says a tag containing a comma is wrapped in double quotes, so
     # this record carries THREE tags and the middle one is "high,priority".
-    # The splitter ignores the quoting and yields four, which this report then
-    # renders as ground truth in the committed golden.
-    #
-    # Pinned as a KNOWN-WRONG expectation with xfail rather than asserting the
-    # wrong value as correct: asserting four tags would enshrine the defect, and
-    # deleting the case would hide it. When src/parse.py is fixed this test
-    # starts XPASSing, which is the signal to regenerate the golden.
-    # Tracked separately - the defect is in parse.py, untouched by this item.
+    # src/parse.py now honours that quoting (issue #87), so this asserts
+    # normally instead of being pinned as a known-wrong xfail.
     text = render_report()
-    pytest.xfail("known mis-parse in src/parse.py: quoted comma tag is split")
     assert "eu, high,priority, settled" in text
 
 
