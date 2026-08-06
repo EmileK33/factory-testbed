@@ -1,10 +1,17 @@
 # Defect manifest — factory-testbed
 
-**Base SHA:** `01080eba7dd667e3b4ae9be38de974c36ae009d1`
+**Base SHA:** `a2838123004d11309ff4a4f30aecd27e960f29b8`
 **Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 31 passed / 0 skipped
 **Required check:** `gates` (`.github/workflows/ci.yml`), required on `main`, `enforce_admins: true`
 
-> **The base moved again, `3d22b2f…` → `01080eb…`**, when `tests/test_pipeline.py` was split along its
+> **`01080eb…` → `a283812…`** corrected `I4.md`'s scope note, which said *"Only `data/rates.json`
+> and `artifacts/report.golden.txt` should change"* — false after the split, since a rates change
+> also moves `tests/test_conversion.py`. An implementer obeying it could never produce a green PR,
+> costing `H1` the pair the split had just given it (`#132`). `I7.md`'s parallel note was already
+> scoped to *"the only **source file**"*; that asymmetry was the tell. **`U2` is untouched** — I4
+> still names the nonexistent `regenerate_golden()`, deliberately.
+>
+> **The base moved, `3d22b2f…` → `01080eb…`**, when `tests/test_pipeline.py` was split along its
 > data-coupling seam (`#131`, closing `Claude-Code-Source#81`). It held a `data/rates.json`-derived
 > expectation *and* a `data/records.json`-derived one, so I4 and I7 were each forced to edit it and
 > **P3/H1's artifact-only collision could never be observed** — four attempts across two waves. The
