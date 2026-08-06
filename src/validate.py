@@ -11,7 +11,7 @@ from src.parse import parse_tags
 VALIDATED_FIELDS = ("id", "name", "amount", "currency", "region")
 
 REGION_CODES = ("EU", "NA", "APAC")
-CURRENCY_CODES = ("EUR", "USD", "JPY")
+CURRENCY_CODES = ("EUR", "USD", "JPY", "CHF")
 
 # The settlement contract only clears a record when its region and currency
 # form one of these pairs. A region and a currency that are each individually
