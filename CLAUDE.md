@@ -29,6 +29,8 @@ tests:       python -m pytest -q
 | `src/report.py` | renders the report artifact |
 | `tools/write_golden.py` | regenerates `artifacts/report.golden.txt` |
 | `artifacts/report.golden.txt` | the committed artifact, compared byte-for-byte by `tests/test_golden.py` |
+| `tools/RESET.md` | the reset runbook — force-push the recorded, already-green base commit back onto `main` |
+| `pytest.ini` | puts the repository root on `sys.path` |
 
 ## The committed artifact
 
