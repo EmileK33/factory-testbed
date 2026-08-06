@@ -10,6 +10,7 @@ from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
 from src.records import load_records
+from src.summarise import summarise
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
@@ -68,6 +69,9 @@ def render_report(records: list[dict] | None = None) -> str:
 
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
     rejected = len(raw) - len(accepted)
+    # The footer below presents this; it does not derive its own counts or
+    # reasons - see summarise() for why that split matters.
+    summary = summarise(raw)
 
     lines = ["Settlement report", "=================", ""]
     lines.extend(_table(accepted))
@@ -100,5 +104,23 @@ def render_report(records: list[dict] | None = None) -> str:
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
     lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
+
+    # The footer: what was rejected, and why. Both the reasons and their counts
+    # come from summary["rejected_reasons"] (computed by summarise(), which in
+    # turn gets its reasons from validate.evaluate_record(), the feed contract
+    # that decides what a rejection means) - this renderer only presents them.
+    # The header always prints, and the empty case gets an explicit line rather
+    # than the section silently vanishing (unlike the "Unlabelled records" line
+    # above, which omits itself when there's nothing to report).
+    footer_title = "Rejected records"
+    lines.append("")
+    lines.append(footer_title)
+    lines.append("-" * len(footer_title))
+    reasons = summary["rejected_reasons"]
+    if reasons:
+        for reason, count in reasons.items():
+            lines.append(f"{reason}: {count}")
+    else:
+        lines.append("No records were rejected.")
 
     return "\n".join(lines) + "\n"

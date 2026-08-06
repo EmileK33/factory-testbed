@@ -29,29 +29,37 @@ def _is_whole_number(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def check_record(record: object) -> dict | None:
-    """Return a normalised copy of *record*, or ``None`` when it must be dropped."""
+def evaluate_record(record: object) -> tuple[dict | None, str | None]:
+    """Return ``(normalised copy, None)`` if *record* clears the feed contract,
+    or ``(None, reason)`` explaining why it was dropped otherwise.
+
+    This is the single place that decides both WHETHER a record is dropped and
+    WHY. ``check_record()`` and any caller that needs the reason (currently
+    ``src.summarise.summarise()``) both go through this function so the two can
+    never disagree - there is exactly one implementation of "why", not one per
+    caller.
+    """
     if not isinstance(record, dict):
-        return None
+        return None, "not a record"
 
     for field in VALIDATED_FIELDS:
         if _missing(record.get(field)):
-            return None
+            return None, f"missing {field}"
 
     if record["region"] not in REGION_CODES:
-        return None
+        return None, "unknown region"
 
     if record["currency"] not in CURRENCY_CODES:
-        return None
+        return None, "unknown currency"
 
     if not _is_whole_number(record["amount"]):
-        return None
+        return None, "amount is not a whole number"
 
     # The feed does not carry credits, and everything downstream of here assumes
     # it: apply_fees() raises on a negative gross. Rejecting it at the contract
     # boundary is what keeps a rendered report from failing halfway through.
     if record["amount"] < 0:
-        return None
+        return None, "amount is negative"
 
     return {
         "id": record["id"],
@@ -60,4 +68,10 @@ def check_record(record: object) -> dict | None:
         "currency": record["currency"],
         "region": record["region"],
         "tags": parse_tags(record.get("tags", "")),
-    }
+    }, None
+
+
+def check_record(record: object) -> dict | None:
+    """Return a normalised copy of *record*, or ``None`` when it must be dropped."""
+    normalised, _ = evaluate_record(record)
+    return normalised
