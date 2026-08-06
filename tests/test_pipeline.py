@@ -1,11 +1,15 @@
-"""Tests for fee application, counting and conversion."""
+"""Tests for fee application.
+
+Conversion and counting used to live here too. They were split out into
+``test_conversion.py`` and ``test_counts.py`` because each is coupled to a
+different committed data file, and holding both in one file forced any two items
+touching different data to edit the same test — see this repository's TESTING.md
+routing table.
+"""
 
 import pytest
 
 from src.normalise import apply_fees
-from src.rates import to_usd_cents
-from src.records import load_records
-from src.summarise import summarise
 
 
 def test_apply_fees_rejects_a_negative_gross_amount():
@@ -16,15 +20,3 @@ def test_apply_fees_rejects_a_negative_gross_amount():
 def test_apply_fees_charges_the_regional_handling_rate():
     [row] = apply_fees([{"id": "R-9", "amount": 1000, "region": "EU"}])
     assert row["net"] == 1000 - (25 + 150)
-
-
-def test_summarise_counts_the_feed_it_was_given():
-    counts = summarise(load_records())
-    assert counts["total"] == len(load_records())
-    assert counts["accepted"] == 5
-    assert counts["rejected"] == ["<unlabelled>", "R-1007", "R-1008"]
-
-
-def test_to_usd_cents_converts_with_the_committed_rates():
-    assert to_usd_cents(450, "USD") == 45000
-    assert to_usd_cents(1200, "EUR") == 132000
