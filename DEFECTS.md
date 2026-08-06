@@ -28,6 +28,28 @@ guard: the thing it must reject, and the legitimate thing it must still accept.
 seven `codex exec` passes. That is stronger liveness evidence than any command written by the
 defect's own author. Passes and their execution counts are listed at the bottom.
 
+## Planted defects that have testbed ISSUE NUMBERS — do not "fix" these
+
+A run's reviewers will find planted defects; that is the point. When one gets filed as a testbed
+issue it then looks like outstanding work, and the next reader may repair it — **deleting the
+subject of whatever assertion it exists to support, and moving the golden and the test baseline
+with it.**
+
+| plant | testbed issue | why it must stay |
+|---|---|---|
+| **P6** | `factory-testbed#83` (closed) | latent at base by design; it is the subject of T2's `I1a`/`I2a`/`I3a` fold-in rows |
+| **B4** | `factory-testbed#88` (closed) | T4 benchmark subject; its fix is also an unmade product decision (settle negative / floor / reject) |
+| **U1** | — | recorded below as unplanted-but-real; same reasoning |
+| **U2** | — | recorded below; a healthy re-measurement is expected to catch it |
+
+Both issues are **closed with the reason on them**, so the pointer survives even if this table is
+not read. If a future run files a planted defect again, close it the same way and add the row here
+rather than repairing the corpus.
+
+The general rule, since it is the one that keeps being relearned: **the remediation for a defect in
+a deliberately-defective corpus is recording it, not repairing it.** Repair belongs in a change that
+deliberately moves the base SHA, re-records the baseline, and updates this file in the same commit.
+
 ---
 
 ## T1 — smoke tier
