@@ -32,4 +32,9 @@ git push --force origin <base-sha>:main
 
 See `tools/RESET.md`.
 
+## Known flake
+
+`tests/test_flaky.py` is the repository's known flaky test, gated by an environment variable.
+See `TESTING.md`'s routing table for the variable name and details.
+
 <!-- wording pass -->
