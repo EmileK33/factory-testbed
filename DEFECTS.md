@@ -1,9 +1,19 @@
 # Defect manifest — factory-testbed
 
-**Base SHA:** `3d22b2fa26f2a27e43cb1f176a5d3a3e5f7be86d`
+**Base SHA:** `01080eba7dd667e3b4ae9be38de974c36ae009d1`
 **Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 31 passed / 0 skipped
 **Required check:** `gates` (`.github/workflows/ci.yml`), required on `main`, `enforce_admins: true`
 
+> **The base moved again, `3d22b2f…` → `01080eb…`**, when `tests/test_pipeline.py` was split along its
+> data-coupling seam (`#131`, closing `Claude-Code-Source#81`). It held a `data/rates.json`-derived
+> expectation *and* a `data/records.json`-derived one, so I4 and I7 were each forced to edit it and
+> **P3/H1's artifact-only collision could never be observed** — four attempts across two waves. The
+> split moved those two tests into `tests/test_conversion.py` and `tests/test_counts.py`: the same 31
+> tests redistributed, no assertion changed, nothing in `src/`, and the dependency graph untouched, so
+> `E5`'s cap deferral and `H2`'s three-sibling ordering keep their subjects. **Every proof below still
+> reproduces**, and the gate count is unchanged — re-measured on a fresh clone at `01080eb` as
+> **31 passed / 0 skipped**. This ends the T2 comparison era that began at `3d22b2f`.
+>
 > **The base moved from `f37a337…` to `3d22b2f…`** when the T2 I7/I8/I9 fixtures landed (`#72`). Every
 > proof below still reproduces **verbatim**, because the diff between the two commits touches *only*
 > `tests/fixtures/t2/*.md` — no `src/`, no test file — and the gate count is unchanged, re-measured on
@@ -208,10 +218,22 @@ exactly when P4 succeeded, and the two plants were scoring each other. I7 is the
 remove: same artifact, disjoint source, concrete enough that parking it would itself be a defect.
 
 ```
-I4 files : ['artifacts/report.golden.txt', 'data/rates.json']
-I7 files : ['artifacts/report.golden.txt', 'data/records.json']
-overlap  : ['artifacts/report.golden.txt']      <- no source file in common
+I4 files : ['artifacts/report.golden.txt', 'data/rates.json',   'tests/test_conversion.py']
+I7 files : ['artifacts/report.golden.txt', 'data/records.json', 'tests/test_counts.py']
+overlap  : ['artifacts/report.golden.txt']   <- no source file AND no test file in common
 ```
+
+**This block used to list two paths per item and omit the tests — and that omission is what made P3
+unobservable for four attempts.** The declared *source* scopes were disjoint exactly as designed, and
+the real diffs still shared `tests/test_pipeline.py`, because it hardcoded a rate-derived value (I4
+must edit it) and the accepted/rejected counts (I7 must edit it). Neither issue body names that file.
+A manifest recording the surface an item *declares* rather than the one it *touches* will keep
+certifying a collision no run can reproduce. Since `01080eb` the tests are split and the lists above
+are **measured**, by simulating both items and regenerating the artifact.
+
+`tests/test_golden.py` is deliberately absent from both lists although a golden-moving change turns it
+red: it is discharged by regenerating the **artifact**, not by editing the test — verified directly.
+That is what makes the artifact the shared path rather than a shared test.
 
 Both items are **data** corrections that re-emit the same committed artifact, which is what makes
 the contention real rather than nominal, and what makes it invisible to any check comparing *source*
