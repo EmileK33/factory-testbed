@@ -79,6 +79,45 @@ def test_report_states_how_many_reported_fields_are_validated():
     assert "5 of 6 reported fields are checked by the validation rules." in render_report()
 
 
+def test_pairs_claim_matches_enforcement():
+    """The report's settlement-pairs sentence must not claim more than the
+    validator actually enforces.
+
+    Builds a probe record whose region and currency are each individually
+    valid but whose combination is outside ALLOWED_PAIRS, then asks
+    check_record() - not this test's assumptions - whether pairs are
+    enforced today. The report text must agree with that live answer. This
+    fails in BOTH directions: if the wording claims enforcement that
+    check_record() doesn't perform, or if check_record() starts enforcing
+    pairs without the wording being restored to say so.
+    """
+    from src.validate import ALLOWED_PAIRS, CURRENCY_CODES, REGION_CODES, check_record
+
+    declared = set(ALLOWED_PAIRS)
+    unpaired = next(
+        (region, currency)
+        for region in REGION_CODES
+        for currency in CURRENCY_CODES
+        if (region, currency) not in declared
+    )
+    region, currency = unpaired
+    probe = {
+        "id": "TEST-PAIR-PROBE",
+        "name": "probe",
+        "amount": 100,
+        "currency": currency,
+        "region": region,
+    }
+    pairs_enforced = check_record(probe) is None
+
+    text = render_report(records=[probe])
+    if pairs_enforced:
+        assert "Settlement pairs in force" in text
+    else:
+        assert "Settlement pairs in force" not in text
+        assert "not enforced" in text.lower()
+
+
 # --- The rejection footer: closes the report, sourced only from summarise(). ---
 
 

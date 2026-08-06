@@ -102,7 +102,10 @@ def render_report(records: list[dict] | None = None) -> str:
         "the validation rules."
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
-    lines.append(f"Settlement pairs in force: {pairs}")
+    lines.append(
+        "Settlement pairs are not enforced; region and currency are validated "
+        "independently. Declared pairs (not checked): " + pairs
+    )
     lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
 
     # The footer: what was rejected, and why. Both the reasons and their counts
