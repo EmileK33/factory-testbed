@@ -1,6 +1,6 @@
 # factory-testbed
 
-A deliberately small settlement-feed processor: load a JSON feed, validate it against the feed
+A deliberately small settlement-feed processor (batch mode): load a JSON feed, validate it against the feed
 contract, apply fees, and render a report artifact that is committed and compared byte-for-byte.
 
 This repository is a **throwaway target for automated build agents**. `main` is force-reset back
