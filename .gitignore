@@ -8,3 +8,15 @@ __pycache__/
 # Scratch files reviewers and agents leave in the repo root.
 factory-testbed-*.txt
 factory-testbed-*.golden
+
+# Per-item agent artifacts. These live in the build worktree and must never be
+# committed: a blanket `git add -A` in a worktree that holds them sweeps them
+# into the PR. That has now happened twice in this repo's history - see the
+# commit "Remove two reviewer scratch files that a blanket 'git add -A' swept
+# in", and again in #90. Ignoring them makes the mistake impossible rather than
+# something the next person has to remember.
+PLAN.md
+AGENT-REPORT.md
+ISSUE_CORRECTIONS.txt
+ISSUE_BODY.md
+PR_BODY.md
