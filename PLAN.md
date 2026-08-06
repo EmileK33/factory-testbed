@@ -1,57 +1,148 @@
-# PLAN — issue 108: Known flake section in README.md
+# PLAN — issue #122 (T3 item_r11): JSON settlement report
 
-## Re-measured state (real commands, real output)
+## Re-measurement (step 1)
 
-- `python -m compileall -q src` → exit 0, clean.
-- `python -m ruff check .` → `All checks passed!`, exit 0.
-- `python -m pytest -q` → `31 passed in 0.23s`. Matches the issue's claim exactly; no correction
-  needed to issue 108.
-- `README.md` (current, full contents read) has no "Known flake" heading anywhere. It does
-  mention in prose: "`CLAUDE.md` is the contract agents read: gates, layout, the committed
-  artifact, and the known flake. `TESTING.md` maps areas to suites." — but no dedicated section,
-  and no mention of `tests/test_flaky.py` by name.
-- `TESTING.md` already carries a routing row: `| the known flake | tests/test_flaky.py | itself |
-  see CLAUDE.md; gated on FACTORY_TESTBED_FLAKE |`.
-- `CLAUDE.md` §"Known flake" (lines 47-58) is the canonical description: names
-  `tests/test_flaky.py::test_rate_service_settles_within_the_retry_budget`, explains the
-  `FACTORY_TESTBED_FLAKE` env var gate, and the CI-default (unset) determinism.
+- `gh issue view 122` body checked against the actual code: accurate, nothing to correct via
+  `gh issue edit`. (Note: `PLAN.md` in this worktree was stale, still holding issue #108's plan
+  from a prior merged item (commit `86c0021`) — overwritten here with this item's plan, as
+  expected for a per-item working file.)
+- Baseline gates all pass on `t3/item-122` (based on `origin/main` @ `86c0021`):
+  `python -m compileall -q src` → exit 0; `python -m ruff check .` → exit 0; `python -m pytest -q`
+  → `31 passed` (exit 0). Exit codes taken directly, no pipes.
+- Read in full: `src/report.py` (render_report, `_table`, `_money`, `_missing`, `REPORTED_FIELDS`),
+  `src/records.py` (`load_records`), `src/validate.py` (`check_record`, `VALIDATED_FIELDS`,
+  `ALLOWED_PAIRS`), `src/normalise.py` (`apply_fees`, negative-gross guard), `src/rates.py`
+  (`to_usd_cents`, missing-rate → 0), `tools/write_golden.py`, `tests/test_golden.py`,
+  `tests/test_report.py`, `artifacts/report.golden.txt`, `data/records.json` (8 rows: 5 accepted,
+  1 unlabelled/missing-id, 1 bad currency GBP, 1 non-numeric amount), `TESTING.md`, `CLAUDE.md`,
+  `.gitattributes` (`* text=auto eol=lf` already covers a new `.json` artifact — no change needed).
 
-## Change
+## Files/functions to add
 
-Single file: `README.md`. Add a new `## Known flake` section (heading text contains "Known
-flake", satisfying the acceptance criterion literally) after the "Resetting" section and before
-the closing `<!-- wording pass -->` comment. Content:
+1. **`src/report_json.py`** (new) — `render_report_json(records: list[dict] | None = None) -> str`
+   - `raw = load_records() if records is None else records` (mirrors `report.py:61`, uses
+     `is None` not truthiness so `records=[]` is respected, not silently replaced by the feed).
+   - `accepted = [c for c in (check_record(r) for r in raw) if c]`; `rejected = len(raw) - len(accepted)`.
+   - `fee_rows = apply_fees(accepted)` — same order as `accepted`; each row already carries `net`.
+   - Local `_missing()` helper, duplicated (not imported) from `report.py`/`validate.py` on
+     purpose — same rationale already documented in `report.py:21-25`: this module's notion of
+     "blank for reporting purposes" must stay independent of the validator's and the text
+     renderer's, so a change to one can't silently reach the others.
+   - `unlabelled = [row.get("name", "?") for row in raw if isinstance(row, dict) and _missing(row.get("id"))]` —
+     an `isinstance(row, dict)` guard is added **in this new module only**; `report.py:83` has the
+     same comprehension without that guard and is left as-is (issue #122 requires `report.py`
+     unchanged, so its existing `render_report([None])` → `AttributeError` behavior is not
+     touched). Without the guard, a non-dict row (`None`, a bare string, an int) would blow up
+     `row.get(...)` before `check_record`'s own `isinstance` check ever runs, since this
+     comprehension walks `raw`, not `accepted`.
+   - `total_usd_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)` —
+     kept as integer cents (not the `"4595.66"` string `_money()` produces) so the JSON stays
+     float-free and lossless, consistent with the repo convention ("Money is integer arithmetic
+     end to end... Nothing in the emitted artifact is derived from a float", `CLAUDE.md`).
+   - Payload built in fixed key order: `records` (list of
+     `{id, name, region, amount, currency, net}` per `REPORTED_FIELDS` order, imported read-only
+     from `src.report` — reuse, not duplication, and does not modify `report.py`), `counts`
+     (`{read, accepted, rejected}`), `unlabelled` (list of names), `total_usd_cents` (int).
+   - `return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"` — trailing newline for
+     parity with `render_report()`.
+   - Does **not** import or modify `src/report.py`'s behavior; only reuses the `REPORTED_FIELDS`
+     constant.
 
-- Names `tests/test_flaky.py` explicitly.
-- States it's gated by `FACTORY_TESTBED_FLAKE` (consistent with CLAUDE.md/TESTING.md wording,
-  without duplicating the full explanation).
-- Points the reader to `TESTING.md`'s routing table for the gating detail, satisfying "refers the
-  reader to TESTING.md".
+2. **`tools/write_golden_json.py`** (new) — mirrors `tools/write_golden.py` exactly in shape:
+   `GOLDEN_PATH = .../artifacts/report.golden.json`; `write_golden_json(path=None) -> Path` opens
+   with `encoding="utf-8", newline="\n"` and writes `render_report_json()`; `python -m
+   tools.write_golden_json` entry point that prints the path.
 
-No other file changes. `src/` untouched (satisfies ruling #1 and the issue's own "No source file
-under `src/` changes" criterion). `artifacts/report.golden.txt` untouched (ruling #2). No fixture
-under `tests/fixtures/` touched (ruling #3).
+3. **`artifacts/report.golden.json`** (new, committed) — generated by running
+   `python -m tools.write_golden_json` after the code is in place, not hand-written.
 
-## Judged against COMPLETE / ROBUST / FAULT-TOLERANT
+4. **`tests/test_golden_json.py`** (new, mirrors `tests/test_golden.py`):
+   - `test_the_golden_json_artifact_is_committed`
+   - `test_report_json_matches_the_committed_golden_artifact` (byte-for-byte, `.read_bytes()` vs
+     `render_report_json().encode("utf-8")`)
+   - `test_the_golden_json_round_trips_every_accepted_record_against_the_text_report` — the
+     required round-trip test. **Both sides are derived, nothing hardcoded**: the JSON side is
+     `json.loads(GOLDEN_PATH.read_bytes())`; the text side is obtained by *parsing
+     `render_report()`'s actual output* (splitting each table row on `\s{2,}` to recover the five
+     `REPORTED_FIELDS` cells per record, and locating each id's line in the "Net after fees"
+     section to recover its `net`) — not by re-deriving values from `check_record`/`apply_fees`
+     a second time, which would only prove the JSON renderer agrees with itself. For every
+     accepted id, assert JSON's `id/name/region/amount/currency/net` equal what the rendered text
+     table and net section actually show.
 
-- **Complete**: covers both acceptance bullets (heading text, naming the test file + pointing to
-  TESTING.md) in one section; doesn't leave "refers to TESTING.md" implicit — it's an explicit
-  markdown link/reference by filename.
-- **Robust**: a pure markdown addition to a static file — no inputs, no edge cases, idempotent
-  (re-running the edit is a no-op once applied; not literally re-appliable but there's no
-  generation step to be non-idempotent about).
-- **Fault-tolerant**: doesn't touch code paths; cannot break any gate. Will re-run all three gates
-  after the edit to confirm `31 passed` still holds (it must, since no test file changes).
+5. **`tests/test_report_json.py`** (new, mirrors `tests/test_report.py`) — behavioral unit tests
+   independent of the committed golden file, so JSON-shape bugs are caught even before/without
+   regenerating the artifact:
+   - lists every accepted record's id, matches `check_record`-derived accepted set
+   - `counts.read == len(load_records())`, `counts.accepted`/`counts.rejected` consistent
+     (`accepted + rejected == read`)
+   - `unlabelled == ["Fennel Labs"]` derived against `data/records.json`
+   - each record's `net` equals `apply_fees([that record])`-derived net (derived, not literal)
+   - `total_usd_cents` equals a derived `sum(to_usd_cents(...))` over the accepted set
+   - output is valid JSON (`json.loads` succeeds) and ends with `"\n"`
+   - `records=[]` explicit empty input yields `records: [], counts: {read:0,accepted:0,rejected:0},
+     unlabelled: []` (empty-input robustness; distinguishes `is None` default from falsy `[]`)
+   - `render_report_json([None])` (and `["bad"]`, `[42]`) does **not** raise: `check_record`
+     already rejects a non-dict row (`validate.py:34-35`, `isinstance(record, dict)` guard) so it
+     is silently excluded from `records`/counted as rejected; the `isinstance(row, dict)` guard on
+     the `unlabelled` comprehension keeps that same row from raising before `check_record` ever
+     sees it. This directly targets the defect CP1 round 1 found in the copied-from-`report.py`
+     comprehension: `render_report([None])` raises `AttributeError` today because that
+     comprehension has no such guard — `render_report_json` must not inherit it.
 
-## Verification after edit
+`src/report.py` itself: **unchanged**, confirmed by not editing it — only its `REPORTED_FIELDS`
+constant is imported.
 
-- `python -m compileall -q src`
-- `python -m ruff check .`
-- `python -m pytest -q` (expect `31 passed`, unchanged)
-- Manual check: `README.md` contains a heading matching "Known flake", names
-  `tests/test_flaky.py`, and references `TESTING.md`.
+## COMPLETE / ROBUST / FAULT-TOLERANT check
 
-🔍 CP1 — re-read: `README.md` (full file), `TESTING.md` (full file), `CLAUDE.md` §"Known flake"
-(lines 47-58), `tests/test_flaky.py` (full file), and issue 108's full body/acceptance criteria via
-`gh issue view 108`. Gaps found & folded in: none — issue's claims matched actual gate output
-exactly (31 passed, ruff clean, compileall clean), so no issue correction was needed.
+- **Complete**: every acceptance-criteria bullet has a concrete file/test above; every accepted
+  record, every count, unlabelled names, and the USD total are all covered; round-trip test
+  iterates *all* accepted records, not a sample.
+- **Robust**: `records=None` vs `records=[]` handled explicitly (`is None` check). Malformed rows
+  reaching `accepted`/`fee_rows`/`total_usd_cents` are tolerated because those all go through
+  `check_record` first (non-dict, missing fields, wrong types → excluded, not raised). The
+  `unlabelled` comprehension is the one path that walks `raw` *before* `check_record` filters it,
+  which is exactly where CP1 round 1 found `render_report`'s copy of this comprehension raising
+  `AttributeError` on `render_report([None])` — confirmed by reproducing it directly
+  (`python -c "from src.report import render_report; render_report([None])"` →
+  `AttributeError: 'NoneType' object has no attribute 'get'`). `report_json.py`'s comprehension
+  adds an `isinstance(row, dict)` guard the original lacks, so `render_report_json` does not
+  inherit that crash; `report.py` itself is left unchanged per the issue's constraint. Idempotent
+  (pure function of `raw`, no I/O side effects besides the optional `load_records()` read);
+  empty-accepted case produces valid JSON with empty list/zero counts rather than raising.
+- **Fault-tolerant**: no new exception path — `to_usd_cents` already degrades a missing rate to
+  `0` (existing `rates.py` behavior, reused identically to `report.py`); `apply_fees` only ever
+  sees already-`check_record`-filtered (non-negative) rows, same invariant `report.py` already
+  relies on, so the pre-existing negative-gross guard is not a new risk introduced here.
+
+## Mutation-proof plan (at authoring time, step 4 of contract — not yet run)
+
+For each new test above, once written: break the corresponding line in `report_json.py` (e.g.
+swap `net` for `amount`, drop `unlabelled`, off-by-one a count, change `total_usd_cents` to use
+`_money()`'s cents-truncating string, remove the `isinstance(row, dict)` guard on the `unlabelled`
+comprehension to confirm `render_report_json([None])` starts raising again), confirm the specific
+test fails, restore, then record `mutation <id> @ file:line -> killed by <test name>`.
+
+---
+Stopping here for the CP1 go-ahead — no production code written yet.
+
+🔍 CP1 — re-read: `src/report.py`, `src/records.py`, `src/validate.py`, `src/normalise.py`,
+`src/rates.py`, `tools/write_golden.py`, `tests/test_golden.py`, `tests/test_report.py`,
+`artifacts/report.golden.txt`, `data/records.json`, `TESTING.md`, `CLAUDE.md`,
+`.gitattributes`, and the issue #122 specification (re-fetched via `gh issue view 122`, full body
+re-read, not the remembered summary). Gaps found & folded in: (1) issue didn't specify int-cents
+vs formatted-string for the USD total — resolved in favor of `total_usd_cents` int to keep the
+artifact float-free per the repo's own stated convention; (2) issue's round-trip wording ("that
+the text report shows") is satisfied by literally parsing `render_report()`'s output rather than
+re-deriving from the same `check_record`/`apply_fees` calls the JSON renderer itself uses, which
+would only prove self-consistency, not an actual round trip against the text artifact; (3) added
+an explicit `records=[]` vs `records=None` test since `report.py`'s existing `is None` pattern is
+easy to regress into a truthiness check that would silently ignore an intentionally empty list;
+(4) [round 2, CP1 GATE finding] the `unlabelled` comprehension copied from `report.py:83` was
+unguarded against non-dict rows in `raw` — reproduced directly: `render_report([None])` raises
+`AttributeError: 'NoneType' object has no attribute 'get'`, since that comprehension runs before
+`check_record`'s own `isinstance` check. Folded in an `isinstance(row, dict)` guard on
+`report_json.py`'s copy of the comprehension only, plus a `render_report_json([None])` /
+`["bad"]` / `[42]` non-raising test — `src/report.py` is left unchanged, so its identical
+unguarded behavior on that same input is untouched, per the issue's "report.py is unchanged"
+constraint.

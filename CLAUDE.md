@@ -29,6 +29,9 @@ tests:       python -m pytest -q
 | `src/report.py` | renders the report artifact |
 | `tools/write_golden.py` | regenerates `artifacts/report.golden.txt` |
 | `artifacts/report.golden.txt` | the committed artifact, compared byte-for-byte by `tests/test_golden.py` |
+| `src/report_json.py` | renders the same report as structured JSON (`render_report_json()`) |
+| `tools/write_golden_json.py` | regenerates `artifacts/report.golden.json` |
+| `artifacts/report.golden.json` | the committed JSON artifact, compared byte-for-byte by `tests/test_golden_json.py` |
 | `tools/RESET.md` | the reset runbook — force-push the recorded, already-green base commit back onto `main` |
 | `pytest.ini` | puts the repository root on `sys.path` |
 
@@ -43,6 +46,13 @@ python -m tools.write_golden
 
 `.gitattributes` pins the repository to LF endings so the comparison does not depend on the
 platform the checkout happened on.
+
+`artifacts/report.golden.json` is checked the same way, byte-for-byte, against `src/report_json.py`.
+Any change to what it emits must be followed by:
+
+```
+python -m tools.write_golden_json
+```
 
 ## Known flake
 

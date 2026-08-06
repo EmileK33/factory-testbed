@@ -1,0 +1,53 @@
+{
+  "records": [
+    {
+      "id": "R-1001",
+      "name": "Aster Holdings",
+      "region": "EU",
+      "amount": 1200,
+      "currency": "EUR",
+      "net": 995
+    },
+    {
+      "id": "R-1002",
+      "name": "Borel Systems",
+      "region": "NA",
+      "amount": 450,
+      "currency": "USD",
+      "net": 403
+    },
+    {
+      "id": "R-1003",
+      "name": "Chandra Foods",
+      "region": "APAC",
+      "amount": 9800,
+      "currency": "JPY",
+      "net": 9775
+    },
+    {
+      "id": "R-1004",
+      "name": "Delta Freight",
+      "region": "NA",
+      "amount": 10,
+      "currency": "USD",
+      "net": -15
+    },
+    {
+      "id": "R-1005",
+      "name": "Eiger Metals",
+      "region": "EU",
+      "amount": 2750,
+      "currency": "USD",
+      "net": 2313
+    }
+  ],
+  "counts": {
+    "read": 8,
+    "accepted": 5,
+    "rejected": 3
+  },
+  "unlabelled": [
+    "Fennel Labs"
+  ],
+  "total_usd_cents": 459566
+}

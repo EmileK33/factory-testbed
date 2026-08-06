@@ -13,6 +13,8 @@ the gates; only a change spanning rows needs the whole suite.
 | counting | `src/summarise.py` | `tests/test_pipeline.py` | |
 | report rendering | `src/report.py` | `tests/test_report.py`, `tests/test_golden.py` | **any change here changes an emitted artifact** |
 | the committed artifact | `artifacts/report.golden.txt` | `tests/test_golden.py` | byte-for-byte; regenerate with `python -m tools.write_golden` |
+| JSON report rendering | `src/report_json.py` | `tests/test_report_json.py`, `tests/test_golden_json.py` | **any change here changes an emitted artifact**; carries the same data as `src/report.py` in structured form |
+| the committed JSON artifact | `artifacts/report.golden.json` | `tests/test_golden_json.py` | byte-for-byte; regenerate with `python -m tools.write_golden_json` |
 | the known flake | `tests/test_flaky.py` | itself | see CLAUDE.md; gated on `FACTORY_TESTBED_FLAKE` |
 
 ## Running a subset
@@ -20,4 +22,5 @@ the gates; only a change spanning rows needs the whole suite.
 ```bash
 python -m pytest -q tests/test_records.py
 python -m pytest -q tests/test_report.py tests/test_golden.py
+python -m pytest -q tests/test_report_json.py tests/test_golden_json.py
 ```
