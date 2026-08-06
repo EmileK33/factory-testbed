@@ -43,3 +43,97 @@ def test_load_records_returns_independent_copies():
 
 def test_load_records_keeps_the_row_with_no_id():
     assert any("id" not in record for record in load_records())
+
+
+# Tests for non-dict elements (silent cases and errors)
+
+
+def test_load_records_rejects_empty_list_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([[]]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_rejects_empty_string_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([""]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_rejects_nested_list_pair(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([["a", "b"]]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_rejects_nonempty_string_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps(["oops"]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_rejects_nested_empty_list(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([[[]]]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_rejects_number_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([123]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_rejects_null_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([None]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_rejects_boolean_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([True]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_records(feed)
+
+
+def test_load_records_error_includes_file_path(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps(["bad"]), encoding="utf-8")
+    with pytest.raises(ValueError) as exc_info:
+        load_records(feed)
+    assert str(feed) in str(exc_info.value)
+
+
+def test_load_records_error_includes_row_index(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, {"id": "X-2"}, "bad"]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as exc_info:
+        load_records(feed)
+    assert "row 2" in str(exc_info.value)
+
+
+def test_load_records_error_includes_element_type(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([123]), encoding="utf-8")
+    with pytest.raises(ValueError) as exc_info:
+        load_records(feed)
+    assert "int" in str(exc_info.value)
+
+
+def test_load_records_accepts_empty_dict_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{"id": "X-1"}, {}]), encoding="utf-8")
+    records = load_records(feed)
+    assert len(records) == 2
+    assert records[1] == {}
