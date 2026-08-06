@@ -62,6 +62,47 @@ def test_summarise_counts_the_feed_it_was_given():
     assert counts["rejected"] == ["<unlabelled>"]
 
 
+def test_summarise_counts_accepted_records_by_tag():
+    # LITERAL expectations, hand-derived from data/records.json, deliberately
+    # not re-derived by calling check_record()/parse_tags() here - comparing
+    # the implementation to itself would pass even if both sides shared a
+    # mis-parse. R-1001's tags column is quoted ('eu,"high,priority",settled')
+    # and src/parse.py has a known mis-parse of quoted commas (tracked
+    # separately, see tests/test_report.py), so it splits into FOUR tags
+    # ("eu", "high", "priority", "settled") rather than three - by_tag
+    # inherits that as-is. Fennel Labs (no id) is rejected and must not
+    # contribute its "eu"/"unlabelled" tags to the counts.
+    counts = summarise(load_records())
+    assert counts["by_tag"] == {
+        "eu": 3,
+        "high": 1,
+        "priority": 1,
+        "settled": 2,
+        "na": 3,
+        "apac": 1,
+        "bulk": 1,
+        "small": 1,
+        "crossborder": 1,
+        "rail": 1,
+        "air": 1,
+    }
+
+
+def test_summarise_by_tag_is_empty_for_no_records():
+    counts = summarise([])
+    assert "by_tag" in counts
+    assert counts["by_tag"] == {}
+
+
+def test_summarise_by_tag_excludes_rejected_records():
+    accepted = {"id": "R-1", "name": "Keep Co", "amount": 100, "currency": "USD",
+                "region": "NA", "tags": "keep"}
+    rejected = {"name": "Drop Co", "amount": 50, "currency": "USD",
+                "region": "NA", "tags": "drop"}
+    counts = summarise([accepted, rejected])
+    assert counts["by_tag"] == {"keep": 1}
+
+
 def test_to_usd_cents_converts_with_the_committed_rates():
     assert to_usd_cents(450, "USD") == 45000
     assert to_usd_cents(1200, "EUR") == 129600
