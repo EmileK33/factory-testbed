@@ -79,8 +79,16 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append("Net after fees")
     lines.append("--------------")
-    for row in apply_fees(accepted):
-        lines.append(f"{row['id']}  {row['net']:>8}")
+    net_rows = apply_fees(accepted)
+    # The amount column's right edge is derived from the data, not a magic
+    # constant: both the id label and the net are padded to the widest value
+    # actually present in this block, so every line ends at the same column
+    # regardless of how many digits any individual id or net has (#97).
+    id_width = max((len(row["id"]) for row in net_rows), default=0)
+    net_strings = [str(row["net"]) for row in net_rows]
+    net_width = max((len(value) for value in net_strings), default=0)
+    for row, net_value in zip(net_rows, net_strings):
+        lines.append(f"{row['id'].ljust(id_width)}  {net_value.rjust(net_width)}")
     lines.append("")
 
     total_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)

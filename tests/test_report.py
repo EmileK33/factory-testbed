@@ -1,5 +1,6 @@
 """Tests for the rendered settlement report."""
 
+from src.normalise import apply_fees
 from src.records import load_records
 from src.report import REPORTED_FIELDS, render_report
 from src.validate import check_record
@@ -64,6 +65,83 @@ def test_report_renders_an_empty_tag_list_as_a_dash():
     text = render_report(records=[record])
     row_line = [line for line in text.splitlines() if line.startswith("R-9001")][0]
     assert row_line.split()[-1] == "-"
+
+
+# --- Net after fees: the amount column aligns on a stable right edge (#97) ---
+
+
+def test_net_after_fees_amounts_align_on_a_stable_right_edge():
+    """Criteria 1 & 2: every line ends at the same column, and that column is
+    the widest rendered net's width plus the fixed label width (the id column,
+    padded to its own widest value, plus the 2-space gutter).
+
+    R-1's net (925) and R-22's net (94975) deliberately differ in both id
+    length and net digit-length, so a fixed-width-8 implementation would
+    still "pass" a naive length check by coincidence - the formula assertion
+    below is what actually pins the alignment to the data instead of to the
+    number 8.
+    """
+    records = [
+        {"id": "R-1", "name": "One", "amount": 1000, "currency": "USD", "region": "NA"},
+        {"id": "R-22", "name": "Two", "amount": 100000, "currency": "USD", "region": "NA"},
+    ]
+    text = render_report(records=records)
+    lines = text.splitlines()
+    start = lines.index("Net after fees") + 2
+    row_lines = lines[start : start + len(records)]
+    assert len(row_lines) == len(records)
+
+    accepted = [check_record(r) for r in records]
+    nets = apply_fees(accepted)
+    assert [row["net"] for row in nets] == [925, 94975]
+    net_width = max(len(str(row["net"])) for row in nets)
+    id_width = max(len(row["id"]) for row in accepted)
+    # The two nets differ in digit-length, so this genuinely exercises padding
+    # rather than being satisfied vacuously.
+    assert len({len(str(row["net"])) for row in nets}) > 1
+
+    assert len({len(line) for line in row_lines}) == 1
+    assert len(row_lines[0]) == net_width + id_width + 2
+    assert row_lines[0].endswith(str(925).rjust(net_width))
+    assert row_lines[1].endswith(str(94975).rjust(net_width))
+
+
+def test_net_after_fees_uniform_8_char_width_matches_todays_fixed_padding():
+    """Criterion 3 (as corrected on #97): a feed whose nets are all exactly 8
+    characters wide - today's hardcoded field width - must render identically
+    to the legacy fixed-width formula ``f"{id}  {net:>8}"``. This is the one
+    uniform width where the old code and the data-derived width coincide;
+    any other uniform width legitimately changes (that's covered by the
+    alignment test above, not asserted here).
+    """
+    records = [
+        {"id": "R-1", "name": "One", "amount": 10_000_025, "currency": "JPY", "region": "APAC"},
+        {"id": "R-2", "name": "Two", "amount": 100_000_024, "currency": "JPY", "region": "APAC"},
+    ]
+    accepted = [check_record(r) for r in records]
+    nets = apply_fees(accepted)
+    assert [len(str(row["net"])) for row in nets] == [8, 8]  # both exactly today's width
+
+    text = render_report(records=records)
+    lines = text.splitlines()
+    start = lines.index("Net after fees") + 2
+    row_lines = lines[start : start + len(records)]
+
+    legacy_formula = [f"{row['id']}  {row['net']:>8}" for row in nets]
+    assert row_lines == legacy_formula
+
+
+def test_net_after_fees_handles_no_accepted_records():
+    """Robustness: an all-rejected feed must not raise (``max()`` over an
+    empty sequence would, without the ``default=0`` guard) and the block's
+    header/divider must still render.
+    """
+    rejected_only = [{"name": "No Id", "amount": 100, "currency": "USD", "region": "NA"}]
+    text = render_report(records=rejected_only)
+    lines = text.splitlines()
+    start = lines.index("Net after fees")
+    assert lines[start + 1] == "--------------"
+    assert lines[start + 2] == ""
 
 
 def test_report_states_how_many_reported_fields_are_validated():
