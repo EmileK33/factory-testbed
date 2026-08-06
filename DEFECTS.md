@@ -1,8 +1,21 @@
 # Defect manifest — factory-testbed
 
-**Base SHA:** `f37a337afe002c839ff285e87731e88b389a93ba`
-**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 31 passed
+**Base SHA:** `3d22b2fa26f2a27e43cb1f176a5d3a3e5f7be86d`
+**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 31 passed / 0 skipped
 **Required check:** `gates` (`.github/workflows/ci.yml`), required on `main`, `enforce_admins: true`
+
+> **The base moved from `f37a337…` to `3d22b2f…`** when the T2 I7/I8/I9 fixtures landed (`#72`). Every
+> proof below still reproduces **verbatim**, because the diff between the two commits touches *only*
+> `tests/fixtures/t2/*.md` — no `src/`, no test file — and the gate count is unchanged, re-measured on
+> a fresh clone at `3d22b2f` as **31 passed / 0 skipped**.
+>
+> **Do not reset to `f37a337`.** It is green and it is no longer the base; resetting there silently
+> discards the T2 fixture corpus, and a tier that recreates its issue bodies by hand is no longer
+> comparable to the runs that used the committed ones.
+>
+> **Run records further down that name `f37a337` are HISTORY and are correct as written** — those runs
+> really did execute at that commit. Do not "update" them to match this header; a record retro-fitted
+> to a base it did not run on is worse than a stale one, because nothing marks it as changed.
 
 ## Why this file is on an orphan branch
 
