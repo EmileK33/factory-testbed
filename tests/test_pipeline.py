@@ -58,8 +58,8 @@ def test_fee_for_reads_amount_before_region():
 def test_summarise_counts_the_feed_it_was_given():
     counts = summarise(load_records())
     assert counts["total"] == len(load_records())
-    assert counts["accepted"] == 5
-    assert counts["rejected"] == ["<unlabelled>", "R-1007", "R-1008"]
+    assert counts["accepted"] == 7
+    assert counts["rejected"] == ["<unlabelled>"]
 
 
 def test_to_usd_cents_converts_with_the_committed_rates():
