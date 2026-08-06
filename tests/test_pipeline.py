@@ -62,6 +62,41 @@ def test_summarise_counts_the_feed_it_was_given():
     assert counts["rejected"] == ["<unlabelled>"]
 
 
+def test_summarise_reports_rejection_reasons_for_the_real_feed():
+    counts = summarise(load_records())
+    assert counts["rejected_reasons"] == {"missing id": 1}
+    # The per-reason total must never drift from the plain accept/reject counts.
+    assert sum(counts["rejected_reasons"].values()) == counts["total"] - counts["accepted"]
+
+
+def test_summarise_rejected_reasons_is_empty_when_nothing_is_rejected():
+    # The empty case: a feed where nothing is rejected must still produce a
+    # coherent (present, not missing) rejected_reasons value, unlike the
+    # existing "rejected" key, which stays absent when there's nothing to list.
+    clean_feed = [
+        {"id": "R-1", "name": "One", "amount": 100, "currency": "USD", "region": "NA"},
+        {"id": "R-2", "name": "Two", "amount": 200, "currency": "EUR", "region": "EU"},
+    ]
+    counts = summarise(clean_feed)
+    assert counts["rejected_reasons"] == {}
+    assert "rejected" not in counts
+
+
+def test_summarise_counts_multiple_rejection_reasons_independently():
+    mixed_feed = [
+        {"name": "No Id", "amount": 100, "currency": "USD", "region": "NA"},
+        {"id": "R-3", "name": "Bad Currency", "amount": 100, "currency": "GBP", "region": "NA"},
+        {"id": "R-4", "name": "Bad Currency 2", "amount": 100, "currency": "GBP", "region": "NA"},
+        {"id": "R-5", "name": "Negative", "amount": -5, "currency": "USD", "region": "NA"},
+    ]
+    counts = summarise(mixed_feed)
+    assert counts["rejected_reasons"] == {
+        "missing id": 1,
+        "unknown currency": 2,
+        "amount is negative": 1,
+    }
+
+
 def test_summarise_counts_accepted_records_by_tag():
     # LITERAL expectations, hand-derived from data/records.json, deliberately
     # not re-derived by calling check_record()/parse_tags() here - comparing

@@ -77,3 +77,53 @@ def test_report_renders_an_empty_tag_list_as_a_dash():
 
 def test_report_states_how_many_reported_fields_are_validated():
     assert "5 of 6 reported fields are checked by the validation rules." in render_report()
+
+
+# --- The rejection footer: closes the report, sourced only from summarise(). ---
+
+
+def test_report_footer_lists_the_rejection_reason_and_count():
+    text = render_report()
+    lines = text.splitlines()
+    header_index = lines.index("Rejected records")
+    assert lines[header_index + 1] == "-" * len("Rejected records")
+    assert lines[header_index + 2] == "missing id: 1"
+    # Nothing trails the footer.
+    assert len(lines) == header_index + 3
+
+
+def test_report_footer_states_no_rejections_when_the_feed_is_clean():
+    # The empty case: a feed in which nothing is rejected must still produce a
+    # coherent footer - an explicit line, not a silently-omitted section (the
+    # defect the existing "Unlabelled records" guard has: it just disappears
+    # when there's nothing to report).
+    clean_records = [
+        {"id": "R-1", "name": "One", "amount": 100, "currency": "USD", "region": "NA"},
+        {"id": "R-2", "name": "Two", "amount": 200, "currency": "EUR", "region": "EU"},
+    ]
+    text = render_report(records=clean_records)
+    lines = text.splitlines()
+    header_index = lines.index("Rejected records")
+    assert lines[header_index + 1] == "-" * len("Rejected records")
+    assert lines[header_index + 2] == "No records were rejected."
+    assert len(lines) == header_index + 3
+
+
+def test_report_footer_lists_multiple_reasons_each_on_its_own_line():
+    mixed_records = [
+        {"id": "R-1", "name": "One", "amount": 100, "currency": "USD", "region": "NA"},
+        {"name": "No Id", "amount": 100, "currency": "USD", "region": "NA"},
+        {"id": "R-3", "name": "Bad Currency", "amount": 100, "currency": "GBP", "region": "NA"},
+    ]
+    text = render_report(records=mixed_records)
+    lines = text.splitlines()
+    header_index = lines.index("Rejected records")
+    assert lines[header_index + 2] == "missing id: 1"
+    assert lines[header_index + 3] == "unknown currency: 1"
+    assert len(lines) == header_index + 4
+
+
+def test_report_footer_reason_total_matches_the_records_rejected_line():
+    text = render_report()
+    assert "Records rejected: 1" in text
+    assert "missing id: 1" in text
