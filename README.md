@@ -31,3 +31,4 @@ git push --force origin <base-sha>:main
 ```
 
 See `tools/RESET.md`.
+# B12 merge-gate probe, not a real change
