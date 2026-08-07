@@ -14,6 +14,11 @@ def test_summarise_counts_the_feed_it_was_given():
     assert counts["accepted"] == 7
     assert counts["rejected"] == ["<unlabelled>"]
     assert counts["rejected_by_reason"] == {"missing id": 1}
+    assert counts["by_tag"]["eu"] == 3
+    assert counts["by_tag"]["na"] == 3
+    assert counts["by_tag"]["settled"] == 2
+    assert counts["by_tag"]["bulk"] == 1
+    assert counts["by_tag"]["high,priority"] == 1
 
 
 def test_summarise_reports_no_rejection_reasons_when_nothing_is_rejected():
@@ -62,3 +67,22 @@ def test_summarise_tallies_multiple_records_under_the_same_reason():
     counts = summarise([missing_id_a, missing_id_b, bad_currency])
     assert counts["accepted"] == 0
     assert counts["rejected_by_reason"] == {"missing id": 2, "unrecognised currency": 1}
+
+
+def test_summarise_by_tag_counts_a_repeated_tag_once_per_record():
+    records = [
+        {
+            "id": "R-9001",
+            "name": "Dup Tag Co",
+            "amount": 100,
+            "currency": "USD",
+            "region": "NA",
+            "tags": "eu,eu",
+        }
+    ]
+    counts = summarise(records)
+    assert counts["by_tag"] == {"eu": 1}
+
+
+def test_summarise_by_tag_is_empty_for_no_records():
+    assert summarise([])["by_tag"] == {}
