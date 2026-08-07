@@ -10,6 +10,7 @@ from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
 from src.records import load_records
+from src.summarise import summarise
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
@@ -64,9 +65,15 @@ def _money(cents: int) -> str:
 def render_report(records: list[dict] | None = None) -> str:
     """Return the settlement report for *records* (defaults to the live feed)."""
     raw = load_records() if records is None else records
+    summary = summarise(raw)
 
+    # check_record() still runs per row here because the table and the fee
+    # section need the normalised record content, not just a count. The
+    # counts printed below come from `summary`, not from len(accepted) or
+    # any subtraction against it, so this sweep can never disagree with the
+    # summary about how many were accepted/rejected — only about what an
+    # accepted row looks like.
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
-    rejected = len(raw) - len(accepted)
 
     lines = ["Settlement report", "=================", ""]
     lines.extend(_table(accepted))
@@ -80,9 +87,9 @@ def render_report(records: list[dict] | None = None) -> str:
 
     total_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)
 
-    lines.append(f"Records read: {len(raw)}")
-    lines.append(f"Records accepted: {len(accepted)}")
-    lines.append(f"Records rejected: {rejected}")
+    lines.append(f"Records read: {summary['total']}")
+    lines.append(f"Records accepted: {summary['accepted']}")
+    lines.append(f"Records rejected: {summary['rejected']}")
     lines.append("")
 
     unlabelled = [row.get("name", "?") for row in raw if _missing(row.get("id"))]
@@ -104,5 +111,18 @@ def render_report(records: list[dict] | None = None) -> str:
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
     lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
+
+    # The footer accounts for every rejected record: how many, and why. Both
+    # the count and the reasons come straight from `summary` — the summary
+    # the pipeline computes is the only place that decides what a rejection
+    # means, so nothing here re-derives or recounts anything.
+    lines.append("")
+    lines.append("Rejections")
+    lines.append("----------")
+    reasons = summary.get("rejection_reasons")
+    if reasons:
+        lines.extend(f"{reason}: {count}" for reason, count in reasons.items())
+    else:
+        lines.append("No records were rejected.")
 
     return "\n".join(lines) + "\n"

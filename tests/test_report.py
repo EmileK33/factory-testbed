@@ -62,6 +62,75 @@ def test_report_states_how_many_reported_fields_are_validated():
     assert "5 of 6 reported fields are checked by the validation rules." in render_report()
 
 
+def test_report_footer_names_the_real_feeds_rejection_reason():
+    # data/records.json rejects exactly one record (Fennel Labs, no id), so
+    # the footer must account for exactly that one reason.
+    text = render_report()
+    lines = text.splitlines()
+    assert "Rejections" in lines
+    footer = lines[lines.index("Rejections") :]
+    assert footer[1] == "----------"
+    assert "missing id: 1" in footer
+
+
+def test_report_footer_says_nothing_was_rejected_when_nothing_was():
+    records = [
+        {
+            "id": "R-9001",
+            "name": "Clean Co",
+            "amount": 100,
+            "currency": "USD",
+            "region": "NA",
+            "tags": "",
+        },
+        {
+            "id": "R-9002",
+            "name": "Also Clean Co",
+            "amount": 200,
+            "currency": "EUR",
+            "region": "EU",
+            "tags": "",
+        },
+    ]
+    text = render_report(records)
+    lines = text.splitlines()
+    footer = lines[lines.index("Rejections") :]
+    assert footer == ["Rejections", "----------", "No records were rejected."]
+    assert "Records rejected: 0" in text
+
+
+def test_report_footer_accounts_for_multiple_reasons_and_repeats():
+    records = [
+        {
+            "id": "R-9001",
+            "name": "Clean Co",
+            "amount": 100,
+            "currency": "USD",
+            "region": "NA",
+            "tags": "",
+        },
+        {"name": "No Id A", "amount": 100, "currency": "USD", "region": "NA"},
+        {"name": "No Id B", "amount": 100, "currency": "USD", "region": "NA"},
+        {
+            "id": "R-9004",
+            "name": "Bad Currency",
+            "amount": 100,
+            "currency": "GBP",
+            "region": "NA",
+        },
+    ]
+    text = render_report(records)
+    lines = text.splitlines()
+    assert "Records rejected: 3" in text
+    footer = lines[lines.index("Rejections") :]
+    assert footer == [
+        "Rejections",
+        "----------",
+        "missing id: 2",
+        "unknown currency: GBP: 1",
+    ]
+
+
 def test_report_states_the_true_intersection_not_len_of_validated_fields(monkeypatch):
     # VALIDATED_FIELDS is not guaranteed to be a subset of REPORTED_FIELDS.
     # Here len(VALIDATED_FIELDS) is still 5 (same as today's real value), but
