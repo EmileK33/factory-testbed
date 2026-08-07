@@ -79,3 +79,55 @@ def test_report_checked_count_is_a_real_intersection_not_two_lengths(monkeypatch
     monkeypatch.setattr(validate, "VALIDATED_FIELDS", ("id", "name", "not_reported"))
     text = render_report(records=[])
     assert f"2 of {len(REPORTED_FIELDS)} reported fields are checked by the validation rules." in text
+
+
+def test_report_footer_names_each_rejection_reason_with_its_count():
+    records = [
+        {"id": "A", "name": "A Co", "amount": 100, "currency": "USD", "region": "NA"},
+        {"name": "No Id", "amount": 100, "currency": "USD", "region": "NA"},
+        {"id": "B", "name": "Bad Currency", "amount": 100, "currency": "GBP", "region": "NA"},
+    ]
+    text = render_report(records=records)
+    assert "Rejections" in text
+    assert "missing id: 1 record" in text
+    assert "unknown currency: 1 record" in text
+
+
+def test_report_footer_pluralises_the_reason_count():
+    records = [
+        {"name": "No Id 1", "amount": 100, "currency": "USD", "region": "NA"},
+        {"name": "No Id 2", "amount": 100, "currency": "USD", "region": "NA"},
+    ]
+    text = render_report(records=records)
+    assert "missing id: 2 records" in text
+    assert "missing id: 2 record\n" not in text  # not the singular form
+
+
+def test_report_footer_states_nothing_was_rejected_when_the_feed_is_clean():
+    records = [{"id": "A", "name": "A Co", "amount": 100, "currency": "USD", "region": "NA"}]
+    text = render_report(records=records)
+    assert "Rejections\n----------\nNo records were rejected." in text
+
+
+def test_report_footer_handles_an_empty_feed():
+    text = render_report(records=[])
+    assert "Rejections\n----------\nNo records were rejected." in text
+
+
+def test_report_footer_is_the_last_thing_in_the_report():
+    text = render_report()
+    lines = text.rstrip("\n").splitlines()
+    assert lines[-3] == "Rejections"
+    assert lines[-2] == "----------"
+    assert lines[-1] == "missing id: 1 record"
+
+
+def test_report_body_above_the_footer_is_unchanged_by_the_new_footer():
+    # Pins that everything through "Validation covers: ..." is still exactly
+    # what it was before the footer existed, for the committed feed.
+    text = render_report()
+    before_footer = text.split("\n\nRejections\n")[0]
+    assert before_footer.endswith(
+        "Validation covers: id, name, amount, currency, region"
+    )
+    assert "Rejections" not in before_footer
