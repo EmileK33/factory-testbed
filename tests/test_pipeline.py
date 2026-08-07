@@ -36,6 +36,9 @@ def test_fee_for_apac_is_flat_only():
 
 
 def test_fee_for_unknown_region_defaults_handling_to_zero():
-    record = {"id": "R-2", "amount": 1000, "region": "ZZ"}
+    # amount=10000 (not 1000): at 1000, a mutated default of .get(region, 1)
+    # still floor-divides to 0 and this test wouldn't catch it. 10000 is the
+    # first amount where a wrong default of 1 diverges from the correct 0.
+    record = {"id": "R-2", "amount": 10000, "region": "ZZ"}
     assert _handling_component(record) == 0
     assert fee_for(record) == FLAT_FEE
