@@ -25,6 +25,17 @@ def test_parse_tags_is_idempotent():
     assert parse_tags(once) == once
 
 
+def test_parse_tags_keeps_a_quoted_comma_inside_its_tag():
+    # The upstream exporter wraps a comma-containing tag in double quotes;
+    # the comma inside the quotes must not be treated as a separator.
+    assert parse_tags('eu,"high,priority",settled') == ["eu", "high,priority", "settled"]
+
+
+def test_parse_tags_is_idempotent_for_a_tag_that_contains_a_comma():
+    once = parse_tags('eu,"high,priority",settled')
+    assert parse_tags(once) == once
+
+
 def test_parse_tags_does_not_raise_on_a_column_of_an_unusable_type():
     assert parse_tags(17) == []
     assert parse_tags({"na": 1}) == []
