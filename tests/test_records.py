@@ -43,3 +43,50 @@ def test_load_records_returns_independent_copies():
 
 def test_load_records_keeps_the_row_with_no_id():
     assert any("id" not in record for record in load_records())
+
+
+def test_load_records_rejects_integer_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{"id": "X-1"}, 42]), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"row 1.*int"):
+        load_records(feed)
+
+
+def test_load_records_rejects_none_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{"id": "X-1"}, None]), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"row 1.*NoneType"):
+        load_records(feed)
+
+
+def test_load_records_rejects_string_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{"id": "X-1"}, "not a dict"]), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"row 1.*str"):
+        load_records(feed)
+
+
+def test_load_records_rejects_float_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{"id": "X-1"}, 3.14]), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"row 1.*float"):
+        load_records(feed)
+
+
+def test_load_records_rejects_nested_list_of_pairs(tmp_path):
+    """Explicitly test silent-acceptance case: list of [key, value] pairs."""
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, [["key1", "val1"], ["key2", "val2"]]]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"row 1.*list"):
+        load_records(feed)
+
+
+def test_load_records_rejects_empty_list_element(tmp_path):
+    """Explicitly test silent-acceptance case: empty list converts to empty dict."""
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{"id": "X-1"}, []]), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"row 1.*list"):
+        load_records(feed)
