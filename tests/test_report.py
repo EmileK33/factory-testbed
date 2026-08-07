@@ -32,12 +32,10 @@ def test_report_shows_the_tags_column_header():
 
 def test_report_shows_each_accepted_records_tags():
     text = render_report()
-    # R-1001's feed row is 'eu,"high,priority",settled'. parse_tags() splits on
-    # every comma regardless of the quoting (a separately-flagged quirk, out of
-    # scope here — see src/parse.py), so today it yields four tags, not three;
-    # this test pins the report's join of whatever parse_tags() returns, not a
-    # claim about parse_tags()'s own correctness.
-    assert "eu, high, priority, settled" in text
+    # R-1001's feed row is 'eu,"high,priority",settled': "high,priority" is one
+    # tag, comma-quoted by the upstream exporter; parse_tags() now parses it as
+    # CSV so the quoted comma survives inside a single tag.
+    assert "eu, high,priority, settled" in text
     assert "na, settled" in text  # R-1002
 
 
