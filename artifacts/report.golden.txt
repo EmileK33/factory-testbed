@@ -31,3 +31,7 @@ Amounts are shown in USD.
 5 of 6 reported fields are checked by the validation rules.
 Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY
 Validation covers: id, name, amount, currency, region
+
+Rejections
+----------
+missing id: 1

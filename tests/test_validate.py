@@ -1,7 +1,7 @@
 """Tests for the feed validation rules."""
 
 from src import validate
-from src.validate import check_record
+from src.validate import check_record, rejection_reason
 
 CLEAN = {
     "id": "R-2001",
@@ -65,3 +65,51 @@ def test_settlement_pairs_are_configured():
     assert ("EU", "EUR") in validate.ALLOWED_PAIRS
     assert ("NA", "USD") in validate.ALLOWED_PAIRS
     assert ("APAC", "JPY") in validate.ALLOWED_PAIRS
+
+
+def test_rejection_reason_is_none_for_a_clean_record():
+    assert rejection_reason(CLEAN) is None
+
+
+def test_rejection_reason_names_each_missing_field():
+    for field in validate.VALIDATED_FIELDS:
+        incomplete = {key: value for key, value in CLEAN.items() if key != field}
+        assert rejection_reason(incomplete) == f"missing {field}", field
+
+
+def test_rejection_reason_names_an_unknown_region():
+    assert rejection_reason({**CLEAN, "region": "ZZ"}) == "unknown region: ZZ"
+
+
+def test_rejection_reason_names_an_unknown_currency():
+    assert rejection_reason({**CLEAN, "currency": "GBP"}) == "unknown currency: GBP"
+
+
+def test_rejection_reason_names_a_non_numeric_amount():
+    assert rejection_reason({**CLEAN, "amount": "n/a"}) == "amount is not a whole number"
+
+
+def test_rejection_reason_names_a_boolean_amount():
+    assert rejection_reason({**CLEAN, "amount": True}) == "amount is not a whole number"
+
+
+def test_rejection_reason_names_a_negative_amount():
+    assert rejection_reason({**CLEAN, "amount": -1}) == "amount is negative"
+
+
+def test_rejection_reason_names_a_non_dict_record():
+    assert rejection_reason("not a record") == "not a record"
+    assert rejection_reason(None) == "not a record"
+
+
+def test_rejection_reason_and_check_record_agree():
+    # The two must never diverge: check_record() is built on top of
+    # rejection_reason(), so "accepted by one, rejected by the other" would
+    # mean the contract disagrees with itself.
+    for record in (
+        CLEAN,
+        {**CLEAN, "currency": "GBP"},
+        {**CLEAN, "amount": -1},
+        {key: value for key, value in CLEAN.items() if key != "id"},
+    ):
+        assert (rejection_reason(record) is None) == (check_record(record) is not None)

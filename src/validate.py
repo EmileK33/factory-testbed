@@ -29,28 +29,43 @@ def _is_whole_number(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def check_record(record: object) -> dict | None:
-    """Return a normalised copy of *record*, or ``None`` when it must be dropped."""
+def rejection_reason(record: object) -> str | None:
+    """Return why the feed contract would drop *record*, or ``None`` when it clears.
+
+    This is the feed contract's own account of *why* — the only place that
+    decides what a rejection means. ``check_record()`` is built on top of it
+    so the accept/reject decision and its reason can never drift apart, and
+    anything that needs to report *why* (e.g. the settlement report's
+    footer) must read it from here rather than re-deriving it.
+    """
     if not isinstance(record, dict):
-        return None
+        return "not a record"
 
     for field in VALIDATED_FIELDS:
         if _missing(record.get(field)):
-            return None
+            return f"missing {field}"
 
     if record["region"] not in REGION_CODES:
-        return None
+        return f"unknown region: {record['region']}"
 
     if record["currency"] not in CURRENCY_CODES:
-        return None
+        return f"unknown currency: {record['currency']}"
 
     if not _is_whole_number(record["amount"]):
-        return None
+        return "amount is not a whole number"
 
     # The feed does not carry credits, and everything downstream of here assumes
     # it: apply_fees() raises on a negative gross. Rejecting it at the contract
     # boundary is what keeps a rendered report from failing halfway through.
     if record["amount"] < 0:
+        return "amount is negative"
+
+    return None
+
+
+def check_record(record: object) -> dict | None:
+    """Return a normalised copy of *record*, or ``None`` when it must be dropped."""
+    if rejection_reason(record) is not None:
         return None
 
     return {
