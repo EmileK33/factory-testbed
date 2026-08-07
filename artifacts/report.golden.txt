@@ -26,7 +26,7 @@ Records accepted: 7
 Records rejected: 1
 
 Unlabelled records: Fennel Labs
-Total (USD): 6019.66
+Total (USD): 5980.90
 Amounts are shown in USD.
 5 of 6 reported fields are checked by the validation rules.
 Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY
