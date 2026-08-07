@@ -29,5 +29,16 @@ def parse_tags(raw: str | None) -> list[str]:
     # newline in the column (unquoted, and therefore not part of this contract)
     # yields more than one row rather than raising or silently truncating the
     # rest of the column; every row's fields are kept.
-    fields = [field for row in csv.reader(io.StringIO(raw), skipinitialspace=True) for field in row]
+    #
+    # csv.reader still raises csv.Error on input it never anticipated: an
+    # unquoted bare "\r" ("new-line character seen in unquoted field") or a
+    # field past its internal size limit ("field larger than field limit").
+    # Both are just malformed tags data, not a reason to break the promise
+    # this function makes above -- string in, list out, never a raise.
+    try:
+        fields = [
+            field for row in csv.reader(io.StringIO(raw), skipinitialspace=True) for field in row
+        ]
+    except csv.Error:
+        return []
     return [field.strip() for field in fields if field.strip()]
