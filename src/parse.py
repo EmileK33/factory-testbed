@@ -6,6 +6,24 @@ import re
 
 _TAG_SEPARATOR = re.compile(r",\s*")
 
+# The feed contract fixes the tag vocabulary: a tag outside this set is an
+# exporter error rather than a new category. ``parse_tags()`` drops anything
+# unrecognised before returning, so no downstream consumer has to re-check.
+KNOWN_TAGS = (
+    "air",
+    "apac",
+    "bulk",
+    "crossborder",
+    "eu",
+    "high",
+    "na",
+    "priority",
+    "rail",
+    "settled",
+    "small",
+    "unlabelled",
+)
+
 
 def parse_tags(raw: str | None) -> list[str]:
     """Split the feed's ``tags`` column into individual tags.
