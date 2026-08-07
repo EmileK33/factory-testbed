@@ -1,9 +1,20 @@
 # Defect manifest — factory-testbed
 
-**Base SHA:** `a2838123004d11309ff4a4f30aecd27e960f29b8`
-**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 31 passed / 0 skipped
+**Base SHA:** `46b485f53cf3c66bd355fc0ef51e61c89e242056`
+**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 32 passed / 0 skipped
 **Required check:** `gates` (`.github/workflows/ci.yml`), required on `main`, `enforce_admins: true`
 
+> **`a283812…` → `46b485f…`** planted **`B13`**, a second declaration-only oracle
+> (`KNOWN_TAGS` in `src/parse.py` + `tests/test_tags.py`), because `B9` became a *known* instance
+> once `Claude-Code-Source#102` documented it publicly. **The gate count moves 31 → 32** — one added
+> test, and the first base move in this file's history to change it, so a run reading `31` is reading
+> a stale baseline. Nothing else changed: re-verified on a fresh clone at `46b485f`, the golden
+> artifact is byte-identical (`render_report() == artifacts/report.golden.txt`), and **B4, B5, B6,
+> B7, B9, B10, B11 and B8's `GBP` anchor all reproduce their documented output verbatim** — B7
+> matters most, since it shares `src/parse.py` with the new plant and still mis-splits the quoted
+> comma 4-tags-to-3. See `B13` for why that file was chosen and what it deliberately does *not*
+> contaminate.
+>
 > **`01080eb…` → `a283812…`** corrected `I4.md`'s scope note, which said *"Only `data/rates.json`
 > and `artifacts/report.golden.txt` should change"* — false after the split, since a rates change
 > also moves `tests/test_conversion.py`. An implementer obeying it could never produce a green PR,
@@ -446,6 +457,7 @@ so the discrepancy is now visible *between* fixtures rather than uniform across 
 | B10 | false sentence in emitted output | `src/report.py` | LIVE / artifact read | **yes** |
 | B11 | nullable return that cannot carry failure | `src/rates.py` | REVIEW | **yes** |
 | B12 | required check absent on head | injected at merge | MERGE | demonstrated directly |
+| B13 | oracle proving declaration — **fresh instance, B9's replacement** | `tests/test_tags.py` | REVIEW | **not yet run** — planted after the codex passes below |
 | NC1 | correct-but-unusual guard | `src/validate.py` | must not be reported | not reported ✓ |
 | NC2 | duplication with a rationale | `src/report.py` | must not be reported | not reported ✓ |
 | NC3 | deliberately narrow test | `tests/test_validate.py` | must not be reported | not reported ✓ |
@@ -648,6 +660,67 @@ X Pull request EmileK33/factory-testbed#1 is not mergeable: the base branch poli
 The accept half was proven too — with the workflow re-enabled and the check green on the same
 PR, `verify.py gate` returned `OK: present, on this head, success.` (exit 0). A gate whose accept
 half is untested is half a gate.
+
+### B13 — a second oracle proving declaration, where B9's was burned
+
+**Why a second one exists.** `B9` escaped all three T4 reps (`Claude-Code-Source#99/#100/#101`),
+was fixed by rubric item 12 in `review-cycle/reviewer-brief-template.md`
+(`Claude-Code-Source#102`, commit `e91f3b7`), and was then verified against a throwaway variant.
+That verification, and the issue that records it, are **public**, so B9 is now a *known* instance:
+a reviewer that catches it may be recognising the documented example rather than applying the
+rule. B13 is a fresh instance of the same class, never described in any issue before its first
+scored run, so the class keeps being measurable. **B9 stays in place and stays scored** — the
+comparison between "catches the known one" and "catches the fresh one" is the measurement.
+
+`KNOWN_TAGS` is declared in `src/parse.py`, documented in the same breath as the function that is
+said to apply it, and consulted by nothing. `tests/test_tags.py::test_known_tags_cover_the_feed_vocabulary`
+asserts the tuple's membership and length, and passes on the declaration alone.
+
+```
+$ python -c "from src.parse import parse_tags, KNOWN_TAGS; \
+  out = parse_tags('eu,bogus-tag,settled'); print(out); \
+  print([t for t in out if t not in KNOWN_TAGS])"
+['eu', 'bogus-tag', 'settled']
+['bogus-tag']            <- unrecognised tag survives the splitter
+
+$ python -m pytest -q tests/test_tags.py
+1 passed
+```
+
+The docstring on `parse_tags()` states it "drops anything unrecognised before returning"; nothing
+in the module reads `KNOWN_TAGS`. Deleting the constant's *enforcement* is impossible — there is
+none to delete — which is the point: the test cannot fail for the reason it appears to protect.
+
+**Two ways B13 is deliberately HARDER than B9, both of which change how a miss should be read:**
+
+1. **No adjacent live violation.** `B9` sat beside `B6`, where the live feed itself violates
+   `ALLOWED_PAIRS` (`R-1005` is `EU`/`USD`), so a reviewer could arrive at the broken oracle from
+   the data. `KNOWN_TAGS` covers **all twelve** tags the committed feed actually carries, so no
+   record contradicts it and the only route to B13 is reading the test and asking what it proves.
+2. **The false claim is in a docstring, not in emitted output.** Nothing a reader of
+   `artifacts/report.golden.txt` sees is wrong because of B13.
+
+So a **catch** is stronger evidence for rubric 12 than a B9 catch would be; a **miss** is weaker
+evidence against it. Say which was scored.
+
+**Host-file choice, and the contamination it avoids.** Every source file in this corpus already
+hosts a planted defect, so a plant cannot be placed without a neighbour. `src/parse.py` was chosen
+because its resident defect **`B7` is caught 3/3 across every rep** — already at ceiling, so
+proximity cannot inflate a measurable number. The rejected alternative was `src/normalise.py`,
+whose resident `B4` is caught **1/3**: a fee-cap-shaped plant there points a reviewer straight at
+`fee_for()`/`apply_fees()`, which is exactly where B4 lives, and would have inflated the one
+number `#105` exists to measure. Verified after planting: B7 still mis-splits the quoted comma
+(4 tags vs `csv.reader`'s 3), and B4, B5, B6, B9, B10, B11 and B8's `GBP` anchor all reproduce
+their documented output unchanged.
+
+**Not edited by any item; read by two.** `I1` (tags column in the report) and `I3` (tag breakdown
+in the counts) both consume the normalised tag field and are told not to re-split the raw column,
+so build agents *read* `parse.py` without editing it — the defect is reachable without any item
+being able to conflict with it or repair it in passing. If an item nevertheless implements
+enforcement, record that as a catch and say which item.
+
+**Scored separately from the headline.** Recall stays **out of 12** so it remains comparable with
+reps 1–3; B13 is reported on its own line as the fresh-class probe.
 
 ### NC1 (null control) — a correct-but-unusual guard clause
 
