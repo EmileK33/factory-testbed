@@ -91,8 +91,14 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
+    # The true count of reported fields that are also validated is an
+    # intersection, not len(VALIDATED_FIELDS) — VALIDATED_FIELDS is not
+    # guaranteed to be a subset of REPORTED_FIELDS, so a bare length compares
+    # two independent cardinalities and can be wrong even though it happens to
+    # match today (VALIDATED_FIELDS currently is a subset of REPORTED_FIELDS).
+    validated_and_reported = len(set(REPORTED_FIELDS) & set(validate.VALIDATED_FIELDS))
     lines.append(
-        f"{len(validate.VALIDATED_FIELDS)} of {len(REPORTED_FIELDS)} reported fields "
+        f"{validated_and_reported} of {len(REPORTED_FIELDS)} reported fields "
         "are checked by the validation rules."
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)

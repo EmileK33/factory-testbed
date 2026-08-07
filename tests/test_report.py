@@ -1,5 +1,6 @@
 """Tests for the rendered settlement report."""
 
+from src import validate as validate_module
 from src.records import load_records
 from src.report import render_report
 from src.validate import check_record
@@ -59,3 +60,18 @@ def test_report_renders_a_dash_for_a_record_with_no_tags():
 
 def test_report_states_how_many_reported_fields_are_validated():
     assert "5 of 6 reported fields are checked by the validation rules." in render_report()
+
+
+def test_report_states_the_true_intersection_not_len_of_validated_fields(monkeypatch):
+    # VALIDATED_FIELDS is not guaranteed to be a subset of REPORTED_FIELDS.
+    # Here len(VALIDATED_FIELDS) is still 5 (same as today's real value), but
+    # "region" (a real reported field) is swapped out for "bogus" (validated,
+    # never reported), so the true overlap with REPORTED_FIELDS drops to 4.
+    # A naive `len(VALIDATED_FIELDS)` count would still print "5 of 6" here
+    # and be wrong; only counting the real intersection catches it.
+    monkeypatch.setattr(
+        validate_module, "VALIDATED_FIELDS", ("id", "name", "amount", "currency", "bogus")
+    )
+    text = render_report(records=[])
+    assert "4 of 6 reported fields are checked by the validation rules." in text
+    assert "5 of 6" not in text
