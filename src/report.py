@@ -88,8 +88,9 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
+    checked_fields = [field for field in REPORTED_FIELDS if field in validate.VALIDATED_FIELDS]
     lines.append(
-        f"{len(validate.VALIDATED_FIELDS)} of {len(REPORTED_FIELDS)} reported fields "
+        f"{len(checked_fields)} of {len(REPORTED_FIELDS)} reported fields "
         "are checked by the validation rules."
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
