@@ -8,6 +8,8 @@ R-1002  Borel Systems   NA         450  USD       na, settled
 R-1003  Chandra Foods   APAC      9800  JPY       apac, bulk
 R-1004  Delta Freight   NA          10  USD       na, small
 R-1005  Eiger Metals    EU        2750  USD       eu, crossborder
+R-1007  Garnet Rail     EU         640  EUR       eu, rail
+R-1008  Halcyon Air     NA         720  USD       na, air
 
 Net after fees
 --------------
@@ -16,13 +18,15 @@ R-1002       403
 R-1003      9775
 R-1004       -15
 R-1005      2313
+R-1007       519
+R-1008       659
 
 Records read: 8
-Records accepted: 5
-Records rejected: 3
+Records accepted: 7
+Records rejected: 1
 
 Unlabelled records: Fennel Labs
-Total (USD): 4595.66
+Total (USD): 6019.66
 Amounts are shown in USD.
 5 of 6 reported fields are checked by the validation rules.
 Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY
