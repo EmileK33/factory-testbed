@@ -32,3 +32,4 @@ git push --force origin <base-sha>:main
 
 See `tools/RESET.md`.
 # B12 merge-gate probe (rep 2), not a real change
+# trigger a fresh CI run now that CI is re-enabled
