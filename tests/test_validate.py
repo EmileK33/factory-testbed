@@ -43,6 +43,13 @@ def test_check_record_rejects_an_unknown_currency():
     assert check_record({**CLEAN, "currency": "GBP"}) is None
 
 
+def test_check_record_rejects_a_non_numeric_amount():
+    # R-1008 in an earlier feed carried amount "n/a"; _is_whole_number()'s
+    # isinstance(value, int) check must actually reject a string, not just
+    # every non-string the other tests exercise (bool, negative, zero).
+    assert check_record({**CLEAN, "amount": "n/a"}) is None
+
+
 def test_check_record_rejects_a_boolean_amount():
     assert check_record({**CLEAN, "amount": True}) is None
     assert check_record({**CLEAN, "amount": 1}) is not None
