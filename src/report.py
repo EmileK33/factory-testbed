@@ -10,6 +10,7 @@ from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
 from src.records import load_records
+from src.summarise import summarise
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
@@ -61,9 +62,10 @@ def _money(cents: int) -> str:
 def render_report(records: list[dict] | None = None) -> str:
     """Return the settlement report for *records* (defaults to the live feed)."""
     raw = load_records() if records is None else records
+    summary = summarise(raw)
 
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
-    rejected = len(raw) - len(accepted)
+    rejected = summary["total"] - summary["accepted"]
 
     lines = ["Settlement report", "=================", ""]
     lines.extend(_table(accepted))
@@ -101,5 +103,18 @@ def render_report(records: list[dict] | None = None) -> str:
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
     lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
+
+    # The footer presents what summarise() already reports — it decides neither
+    # the reasons nor their counts, only how they're sorted and formatted.
+    lines.append("")
+    title = "Rejected records"
+    lines.append(title)
+    lines.append("-" * len(title))
+    reasons = summary["rejected_by_reason"]
+    if reasons:
+        for reason in sorted(reasons):
+            lines.append(f"{reason}: {reasons[reason]}")
+    else:
+        lines.append("No records were rejected.")
 
     return "\n".join(lines) + "\n"

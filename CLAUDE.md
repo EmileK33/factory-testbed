@@ -21,7 +21,7 @@ tests:       python -m pytest -q
 | path | what it is |
 |---|---|
 | `src/records.py` | loads the raw feed from `data/records.json` |
-| `src/validate.py` | the feed contract — `check_record()` returns a normalised copy or `None` |
+| `src/validate.py` | the feed contract — `check_record()` returns a normalised copy or `None`; `rejection_reason()` returns why a record would be dropped, or `None` |
 | `src/parse.py` | packed-column helpers (`parse_tags()`) |
 | `src/rates.py` | currency conversion, basis points against USD |
 | `src/normalise.py` | fee application |

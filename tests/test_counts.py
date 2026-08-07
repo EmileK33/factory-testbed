@@ -13,3 +13,19 @@ def test_summarise_counts_the_feed_it_was_given():
     assert counts["total"] == len(load_records())
     assert counts["accepted"] == 7
     assert counts["rejected"] == ["<unlabelled>"]
+    assert counts["rejected_by_reason"] == {"missing id": 1}
+
+
+def test_summarise_reports_no_rejection_reasons_when_nothing_is_rejected():
+    clean = {
+        "id": "R-9001",
+        "name": "No Tags Co",
+        "amount": 100,
+        "currency": "USD",
+        "region": "NA",
+        "tags": "",
+    }
+    counts = summarise([clean])
+    assert counts["accepted"] == 1
+    assert "rejected" not in counts
+    assert counts["rejected_by_reason"] == {}
