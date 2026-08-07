@@ -22,7 +22,7 @@ def summarise(records: list[dict]) -> dict:
             rejected.append(record.get("id", "<unlabelled>"))
             continue
         result["accepted"] += 1
-        for tag in set(normalised["tags"]):
+        for tag in dict.fromkeys(normalised["tags"]):
             by_tag[tag] = by_tag.get(tag, 0) + 1
 
     if rejected:
