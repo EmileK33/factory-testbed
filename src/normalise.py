@@ -8,9 +8,19 @@ FLAT_FEE = 25
 HANDLING_BP = {"EU": 1500, "NA": 500, "APAC": 0}
 
 
+def _flat_component(record: dict) -> int:
+    """Return the flat portion of the fee charged against *record*."""
+    return FLAT_FEE
+
+
+def _handling_component(record: dict) -> int:
+    """Return the regional handling portion of the fee charged against *record*."""
+    return record["amount"] * HANDLING_BP.get(record["region"], 0) // 10000
+
+
 def fee_for(record: dict) -> int:
     """Return the total fee charged against *record*."""
-    return FLAT_FEE + record["amount"] * HANDLING_BP.get(record["region"], 0) // 10000
+    return _flat_component(record) + _handling_component(record)
 
 
 def apply_fees(records: list[dict]) -> list[dict]:
