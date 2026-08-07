@@ -11,6 +11,10 @@ def test_parse_tags_tolerates_spacing_after_the_separator():
     assert parse_tags("apac, bulk") == ["apac", "bulk"]
 
 
+def test_parse_tags_keeps_a_quoted_comma_inside_one_tag():
+    assert parse_tags('eu,"high,priority",settled') == ["eu", "high,priority", "settled"]
+
+
 def test_parse_tags_returns_nothing_for_a_blank_column():
     assert parse_tags("") == []
     assert parse_tags(None) == []
