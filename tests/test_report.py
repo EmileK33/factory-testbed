@@ -99,3 +99,32 @@ def test_report_footer_reason_counts_sum_to_records_rejected():
     reason_lines = lines[header_index + 2 :]
     total = sum(int(line.rsplit(": ", 1)[1]) for line in reason_lines if ": " in line)
     assert total == expected_total
+
+
+def test_report_footer_sorts_multiple_reasons_alphabetically():
+    """The committed feed only ever produces one rejection reason, so on its own it
+
+    can't exercise the footer's sort. Feed order here is deliberately the reverse
+    of alphabetical order, so this fails if the footer ever silently reverted to
+    feed/insertion order instead of a stable, presentation-only sort.
+    """
+    bad_currency = {
+        "id": "R-9002",
+        "name": "Bad Currency Co",
+        "amount": 30,
+        "currency": "GBP",
+        "region": "NA",
+        "tags": "",
+    }
+    missing_id = {
+        "name": "No Id Co",
+        "amount": 10,
+        "currency": "USD",
+        "region": "NA",
+        "tags": "",
+    }
+    text = render_report(records=[bad_currency, missing_id])
+    lines = text.splitlines()
+    header_index = lines.index("Rejected records")
+    reason_lines = lines[header_index + 2 :]
+    assert reason_lines == ["missing id: 1", "unrecognised currency: 1"]
