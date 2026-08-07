@@ -63,3 +63,22 @@ def test_summarise_by_tag_does_not_re_split_a_quoted_comma_tag():
     # raw string, so it stays a single key, not two.
     assert counts["by_tag"]["high,priority"] == 1
     assert "priority" not in counts["by_tag"]
+
+
+def test_summarise_by_tag_counts_a_record_at_most_once_per_tag():
+    # by_tag counts accepted RECORDS carrying a tag, not tag occurrences: a
+    # record whose own tags column repeats a tag must still contribute only 1.
+    counts = summarise(
+        [
+            {
+                "id": "B-1",
+                "name": "Duplicate Tag",
+                "amount": 100,
+                "currency": "USD",
+                "region": "NA",
+                "tags": "eu,eu",
+            }
+        ]
+    )
+    assert counts["accepted"] == 1
+    assert counts["by_tag"] == {"eu": 1}
