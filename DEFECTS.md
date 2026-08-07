@@ -560,6 +560,22 @@ Scoped to `tests/test_records.py`: `tests/test_golden.py` does catch this mutati
 scope, because the record count appears in the artifact. The planted defect is the six records
 tests' blindness to it, and that is what the runner above measures.
 
+**RUN THIS AT BASE, BEFORE ANY ITEM MERGES — its anchor is destroyed by the corpus itself.**
+`R-1007 (Garnet Rail)` is the only `GBP` row in `data/records.json`, and item `I7` exists
+specifically to change that row's currency to `EUR`. So the recipe above is exactly correct at
+base (measured at `a2838123`: SURVIVED narrow / 6 tests, KILLED full-suite by
+`test_counts.py::test_summarise_counts_the_feed_it_was_given` and
+`test_golden.py::test_report_matches_the_committed_golden_artifact`), and becomes **vacuous the
+moment I7 merges** — zero GBP rows remain to drop.
+
+The failure mode this warns about is not a false pass, it is a **plausible substitute**. Run at
+close-out the recipe reports `CANNOT RUN: ANCHOR-MISSING`, which reads as a broken document and
+invites re-pointing the marker at some other still-present value (e.g. `!= "Eiger Metals"`). That
+substitute *runs*, and reports SURVIVED/KILLED at the same two scopes, so it looks like a
+successful reproduction — but it is a different mutation against a different record, and its
+result is **not comparable across reps**. Two T4 reps scored B8 from that substitute before this
+was noticed. Neither the recipe nor the anchor was ever stale; the run was simply timed wrong.
+
 Found by codex in pass 5: *"`load_records()` returns `[]` … `all(...)` is vacuously true, so
 total record loss passes."*
 
