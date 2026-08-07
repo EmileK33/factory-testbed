@@ -13,7 +13,7 @@ from src.records import load_records
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
-REPORTED_FIELDS = ("id", "name", "region", "amount", "currency")
+REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 
 RIGHT_ALIGNED = frozenset({"amount"})
 
@@ -22,14 +22,20 @@ RIGHT_ALIGNED = frozenset({"amount"})
 # settlement feed REJECTS and moves with the feed contract; this one decides
 # which cells the report prints as blank. They agree today, and keeping them
 # apart is what stops a formatting change from editing the validator's notion
-# of a missing value.
+# of a missing value. An empty list counts as blank too: check_record() always
+# sets "tags", so a record with no tags column still reaches here as [], not
+# as a missing key.
 def _missing(value: object) -> bool:
-    return value is None or value == ""
+    return value is None or value == "" or value == []
 
 
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
-    return "-" if _missing(value) else str(value)
+    if _missing(value):
+        return "-"
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)
 
 
 def _table(rows: list[dict]) -> list[str]:
@@ -86,8 +92,10 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
+    validated_reported = [f for f in REPORTED_FIELDS if f in validate.VALIDATED_FIELDS]
     lines.append(
-        f"All {len(REPORTED_FIELDS)} reported fields are checked by the validation rules."
+        f"{len(validated_reported)} of {len(REPORTED_FIELDS)} reported fields "
+        "are checked by the validation rules."
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
