@@ -13,7 +13,7 @@ from src.records import load_records
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
-REPORTED_FIELDS = ("id", "name", "region", "amount", "currency")
+REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 
 RIGHT_ALIGNED = frozenset({"amount"})
 
@@ -29,6 +29,11 @@ def _missing(value: object) -> bool:
 
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
+    if field == "tags":
+        # check_record() normalises "tags" to a list[str] (src.parse.parse_tags),
+        # never a plain string, so it needs its own join instead of the generic
+        # str(value) below, which would print Python's list repr.
+        return ", ".join(value) if value else "-"
     return "-" if _missing(value) else str(value)
 
 
@@ -86,8 +91,15 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
+    # The true count of reported fields that are also validated is an
+    # intersection, not len(VALIDATED_FIELDS) — VALIDATED_FIELDS is not
+    # guaranteed to be a subset of REPORTED_FIELDS, so a bare length compares
+    # two independent cardinalities and can be wrong even though it happens to
+    # match today (VALIDATED_FIELDS currently is a subset of REPORTED_FIELDS).
+    validated_and_reported = len(set(REPORTED_FIELDS) & set(validate.VALIDATED_FIELDS))
     lines.append(
-        f"All {len(REPORTED_FIELDS)} reported fields are checked by the validation rules."
+        f"{validated_and_reported} of {len(REPORTED_FIELDS)} reported fields "
+        "are checked by the validation rules."
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")

@@ -1,5 +1,6 @@
 """Tests for the rendered settlement report."""
 
+from src import validate as validate_module
 from src.records import load_records
 from src.report import render_report
 from src.validate import check_record
@@ -23,3 +24,54 @@ def test_report_ends_with_a_newline():
 
 def test_report_names_the_unlabelled_record():
     assert "Unlabelled records: Fennel Labs" in render_report()
+
+
+def test_report_shows_the_tags_column_header():
+    header_line = render_report().splitlines()[3]
+    assert header_line == "id      name            region  amount  currency  tags"
+
+
+def test_report_shows_each_accepted_records_tags():
+    text = render_report()
+    # R-1001's feed row is 'eu,"high,priority",settled': "high,priority" is one
+    # tag, comma-quoted by the upstream exporter; parse_tags() now parses it as
+    # CSV so the quoted comma survives inside a single tag.
+    assert "eu, high,priority, settled" in text
+    assert "na, settled" in text  # R-1002
+
+
+def test_report_renders_a_dash_for_a_record_with_no_tags():
+    records = [
+        {
+            "id": "R-9001",
+            "name": "No Tags Co",
+            "amount": 100,
+            "currency": "USD",
+            "region": "NA",
+            "tags": "",
+        }
+    ]
+    text = render_report(records)
+    row = next(line for line in text.splitlines() if line.startswith("R-9001"))
+    assert row.split()[-1] == "-"
+    assert "[]" not in text
+    assert "['']" not in text
+
+
+def test_report_states_how_many_reported_fields_are_validated():
+    assert "5 of 6 reported fields are checked by the validation rules." in render_report()
+
+
+def test_report_states_the_true_intersection_not_len_of_validated_fields(monkeypatch):
+    # VALIDATED_FIELDS is not guaranteed to be a subset of REPORTED_FIELDS.
+    # Here len(VALIDATED_FIELDS) is still 5 (same as today's real value), but
+    # "region" (a real reported field) is swapped out for "bogus" (validated,
+    # never reported), so the true overlap with REPORTED_FIELDS drops to 4.
+    # A naive `len(VALIDATED_FIELDS)` count would still print "5 of 6" here
+    # and be wrong; only counting the real intersection catches it.
+    monkeypatch.setattr(
+        validate_module, "VALIDATED_FIELDS", ("id", "name", "amount", "currency", "bogus")
+    )
+    text = render_report(records=[])
+    assert "4 of 6 reported fields are checked by the validation rules." in text
+    assert "5 of 6" not in text
