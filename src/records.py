@@ -19,4 +19,11 @@ def load_records(path: str | Path | None = None) -> list[dict]:
         payload = json.load(handle)
     if not isinstance(payload, list):
         raise ValueError(f"{target}: expected a JSON array of records")
-    return [dict(row) for row in payload]
+    records: list[dict] = []
+    for index, row in enumerate(payload):
+        if not isinstance(row, dict):
+            raise ValueError(
+                f"{target}: element {index} is not a JSON object (got {type(row).__name__})"
+            )
+        records.append(dict(row))
+    return records
