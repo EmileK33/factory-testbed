@@ -19,4 +19,10 @@ def load_records(path: str | Path | None = None) -> list[dict]:
         payload = json.load(handle)
     if not isinstance(payload, list):
         raise ValueError(f"{target}: expected a JSON array of records")
+    # Validate that each element is a mapping before constructing dicts
+    for i, row in enumerate(payload):
+        if not isinstance(row, dict):
+            raise ValueError(
+                f"{target}: element {i} is not a mapping (got {type(row).__name__})"
+            )
     return [dict(row) for row in payload]
