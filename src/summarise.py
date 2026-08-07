@@ -17,8 +17,10 @@ def summarise(records: list[dict]) -> dict:
 
     rejected = []
     reasons: dict[str, int] = {}
+    by_tag: dict[str, int] = {}
     for record in records:
-        if check_record(record) is None:
+        checked = check_record(record)
+        if checked is None:
             record_id = "<unlabelled>"
             if isinstance(record, dict):
                 record_id = record.get("id", "<unlabelled>")
@@ -27,9 +29,16 @@ def summarise(records: list[dict]) -> dict:
             reasons[reason] = reasons.get(reason, 0) + 1
         else:
             result["accepted"] += 1
+            # dict.fromkeys(...) dedupes while preserving order: a record whose
+            # own tags column repeats a tag (e.g. "eu,eu") must still add at
+            # most 1 to that tag's count, since by_tag counts records carrying
+            # a tag, not tag occurrences.
+            for tag in dict.fromkeys(checked["tags"]):
+                by_tag[tag] = by_tag.get(tag, 0) + 1
 
     result["rejected_count"] = len(rejected)
     if rejected:
         result["rejected"] = rejected
         result["rejection_reasons"] = reasons
+    result["by_tag"] = by_tag
     return result

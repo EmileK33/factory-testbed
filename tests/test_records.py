@@ -43,3 +43,91 @@ def test_load_records_returns_independent_copies():
 
 def test_load_records_keeps_the_row_with_no_id():
     assert any("id" not in record for record in load_records())
+
+
+def test_load_records_rejects_non_dict_int_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, 42]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"row 1.*expected dict.*got int"):
+        load_records(feed)
+
+
+def test_load_records_rejects_non_dict_none_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, None]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"row 1.*expected dict.*got NoneType"):
+        load_records(feed)
+
+
+def test_load_records_rejects_non_dict_string_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, "not a dict"]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"row 1.*expected dict.*got str"):
+        load_records(feed)
+
+
+def test_load_records_rejects_empty_list_element(tmp_path):
+    """Test rejection of empty list (case that previously silently became empty dict)."""
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, []]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"row 1.*expected dict.*got list"):
+        load_records(feed)
+
+
+def test_load_records_rejects_nested_pair_list_element(tmp_path):
+    """Test rejection of nested 2-element pair list (case that previously silently became dict)."""
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, [["key", "value"]]]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"row 1.*expected dict.*got list"):
+        load_records(feed)
+
+
+def test_load_records_includes_file_path_in_error(tmp_path):
+    """Test that error message includes the file path."""
+    feed = tmp_path / "records_bad.json"
+    feed.write_text(
+        json.dumps([42]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"records_bad\.json"):
+        load_records(feed)
+
+
+def test_load_records_with_missing_fields_still_works(tmp_path):
+    """Test that well-formed dicts with missing fields are still accepted."""
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1", "name": "One"}, {"name": "Two"}]),
+        encoding="utf-8",
+    )
+    records = load_records(feed)
+    assert len(records) == 2
+    assert records[0]["id"] == "X-1"
+    assert "id" not in records[1]
+
+
+def test_load_records_with_empty_dict_still_works(tmp_path):
+    """Test that empty dicts are still accepted as valid."""
+    feed = tmp_path / "feed.json"
+    feed.write_text(
+        json.dumps([{"id": "X-1"}, {}]),
+        encoding="utf-8",
+    )
+    records = load_records(feed)
+    assert len(records) == 2
+    assert records[1] == {}
