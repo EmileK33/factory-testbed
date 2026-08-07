@@ -1,115 +1,148 @@
-# PLAN — Issue #151: T2 negctl-parallelism I2 (sequential control)
+# PLAN — #154: header + underline for "Net after fees"
+
+(Note: this worktree's `PLAN.md` on disk matched `main`'s stale content from
+issue #151's build — `1c84227`/`309d66e` both checked in a `PLAN.md` for their
+own item. That content is irrelevant here; this file replaces it.)
 
 ## Re-measurement against actual current source
 
-(Note: this worktree's `PLAN.md` previously contained a stale plan for a
-different item, #150/I1 — the tags-column work. That work is already merged
-to `main` as `#152` and is irrelevant to this item; this file replaces it.)
-
-Read `src/normalise.py` as it exists on `negctl-seq-151` (which already
-includes main's merged `#152`). `fee_for()` today:
+Read `src/report.py` in full on `negctl-park-154` (branched from current
+`main`, i.e. after `#152`'s tags column and `#151`'s `fee_for()` split — both
+merged, neither touches this section). Specifically `_table()` (lines 41-56)
+and the `Net after fees` block in `render_report()` (lines 76-80):
 
 ```python
-def fee_for(record: dict) -> int:
-    """Return the total fee charged against *record*."""
-    return FLAT_FEE + record["amount"] * HANDLING_BP.get(record["region"], 0) // 10000
+lines.append("Net after fees")
+lines.append("--------------")
+for row in apply_fees(accepted):
+    lines.append(f"{row['id']}  {row['net']:>8}")
+lines.append("")
 ```
 
-`*` and `//` are equal precedence, left-to-right, so this evaluates as
-`FLAT_FEE + ((amount * HANDLING_BP.get(region, 0)) // 10000)` — a flat
-component plus a handling component, exactly as the issue describes. The
-issue's file path, function name, and both proposed helper names
-(`_flat_component`, `_handling_component`) match the real code. **No
-correction needed via `gh issue edit`** — verified against `gh issue view 151`
-live output, which matches the cached `ITEM-ISSUE.md` and
-`tests/fixtures/t2/I2.md` verbatim.
+`_table()`'s style: for each field, `width = max(len(field_name), max(len(cell)
+for cell in that column))`; header and underline (`"-" * width`) cells are
+`ljust`/`rjust` per field (right-aligned only for fields in `RIGHT_ALIGNED`,
+e.g. `amount`); all cells joined with `"  "`, line right-stripped.
 
-Confirmed independent of `#152` (tags column, already merged to `main` and
-present in this worktree): `#152` touched only `src/report.py`,
-`tests/test_report.py`, and regenerated `artifacts/report.golden.txt` to add
-a `tags` column. It did not touch `src/normalise.py`. `report.py` does call
-`apply_fees()` (→ `fee_for()`) to render the "Net after fees" section, so the
-golden file's byte-for-byte check *does* transitively cover `fee_for()` — that
-is exactly why the issue's stated constraints ("`fee_for()` must return an
-identical value for every input" and "golden file byte-for-byte unchanged")
-are real, checked acceptance criteria here, not boilerplate.
+**Issue correction filed:** the issue's quote of the main header — `` `id  name
+region  amount  currency` `` — omitted `tags`. `REPORTED_FIELDS` is
+`("id", "name", "region", "amount", "currency", "tags")` (`src/report.py:16`),
+confirmed against the live `artifacts/report.golden.txt` line 4 (`id      name
+region  amount  currency  tags`). Corrected via `gh issue edit 154` (added
+`tags` to the quoted header) and logged the correction + reasoning as a
+comment on the issue. No other factual claim in the issue is wrong: the "no
+header row today" claim, the `<id>  <net>` per-record shape, and the `amount`
+right-alignment reference all check out against the current code as written.
 
-Existing coverage found:
-- `tests/test_pipeline.py` (per `TESTING.md`'s routing table, this is the row
-  for `src/normalise.py`, "coupled to no data file") —
-  `test_apply_fees_rejects_a_negative_gross_amount`,
-  `test_apply_fees_charges_the_regional_handling_rate` (exercises `fee_for`
-  indirectly via `apply_fees`, EU region: `25 + 150` fee math).
-- `tests/test_golden.py` — byte-for-byte check of
-  `artifacts/report.golden.txt` against `render_report()`, which transitively
-  exercises `fee_for()` for every accepted record in the live feed.
+## One judgment call, resolved and documented (not a park)
 
-No labels are set on `#151`, and none on sibling issues `#150`/`#152` either
-— no labeling convention to correct.
+**Revision note:** the first version of this plan hardcoded the header's `id`
+cell to its literal 2-character width (`"id"`) and only right-justified `net`
+to width 8. codex caught a real defect in that version, independently
+re-verified here by computing column indices against the live feed
+(`src/records.py` → `apply_fees()`, ids `R-1001`..`R-1005`, all 6 chars):
 
-**Correction made to the issue: none.** The issue is accurate as written.
+```
+header (broken):  'id' + '  ' + 'net'.rjust(8)              = 'id       net'
+data (unchanged): 'R-1001' + '  ' + '995'.rjust(8) (via :>8) = 'R-1001       995'
+```
 
-## Gaps found against Complete/Robust/Fault-tolerant (folded into the plan)
+`"id"` is 2 chars but the real `id` values are 6 chars, so the header's
+2-space separator lands 4 columns left of the real one — `net`'s label sits
+at column 13, while the real net field starts at column 8 (digits anywhere in
+columns 8-15 depending on value width). Confirmed by rendering the live feed
+and inspecting column indices directly (see script output below), not just
+visually — for every id in the feed the header's `net` label ends up left of
+the data.
 
-1. **Complete:** the two new helpers need their own direct unit coverage, not
-   just indirect coverage through `fee_for`/`apply_fees`/the golden file —
-   otherwise a bug that cancels between the two components (e.g. swapped
-   terms) could still pass every existing assertion. Folding in two new tests
-   that check each helper's return value independently (see Tests below).
-2. **Robust:** `_flat_component` has no natural use for `record`, but giving
-   it the same `(record: dict) -> int` signature as `_handling_component`
-   keeps both callable uniformly and matches the issue's "two components"
-   framing without introducing an asymmetric private API. This is a judgment
-   call, not a defect — noting it here rather than treating it as a gap to
-   silently resolve.
-3. **Fault-tolerant:** no new failure mode is introduced — both helpers only
-   perform the same arithmetic/dict lookups `fee_for()` already performed
-   inline, on the same inputs, so any input that previously raised (e.g.
-   missing `"amount"`/`"region"` key) still raises at the same point, and no
-   input that previously succeeded can newly raise.
-
-## Implementation
-
-In `src/normalise.py`, replace the single-expression `fee_for()` with:
+The issue's literal example text `` `id  net` `` (bare, 2-space gap) is
+illustrative of the *shape* (word, gap, word), not a byte-exact string — it
+can't be, since the real id width is data-driven and unknown at spec-writing
+time. **Fixed resolution:** compute the `id` column's width the same way
+`_table()` computes column widths — from the actual data in this section —
+instead of from the header word's own length:
 
 ```python
-def _flat_component(record: dict) -> int:
-    return FLAT_FEE
-
-
-def _handling_component(record: dict) -> int:
-    return record["amount"] * HANDLING_BP.get(record["region"], 0) // 10000
-
-
-def fee_for(record: dict) -> int:
-    """Return the total fee charged against *record*."""
-    return _flat_component(record) + _handling_component(record)
+net_rows = list(apply_fees(accepted))
+id_width = max([len("id")] + [len(str(row["id"])) for row in net_rows])
 ```
 
-`FLAT_FEE` and `HANDLING_BP` module constants are untouched (no public-name
-changes, per the issue's constraint). `apply_fees()` is untouched — it only
-calls `fee_for()`.
+(mirrors `_table()`'s own width formula, `src/report.py:42-45`; well-defined
+when `net_rows` is empty — `id_width == len("id") == 2`.) Then:
+- **`id`** (left-aligned, "matching the main table's ... left-aligned style
+  for `id`"): header cell `"id".ljust(id_width)`, underline cell
+  `"-" * id_width`, and — the part the first version got wrong — the **data**
+  cell also becomes `str(row["id"]).ljust(id_width)` instead of the bare
+  `row['id']` used today.
+- **`net`** (right-aligned, "consistent with how the main table already
+  right-aligns `amount`"): unchanged from the first version — header cell
+  `"net".rjust(8)`, underline `"-" * 8`, data cell stays `row['net']:>8`,
+  reusing the fixed width the per-record line already commits to.
 
-## Tests
+Re "the existing per-record lines are otherwise unchanged": padding `id` with
+`ljust(id_width)` looks like it touches the data line, but `id_width` is the
+max over the *same* rows being rendered, so for every id actually present
+it's a no-op. Verified directly, not just reasoned about — rendered the live
+feed with both formatters and diffed:
 
-Add to `tests/test_pipeline.py` (same file per `TESTING.md`'s routing row for
-fees — no reason to split it further for an internal refactor):
+```
+old = [f"{r['id']}  {r['net']:>8}" for r in net_rows]
+new = [f"{str(r['id']).ljust(id_width)}  {r['net']:>8}" for r in net_rows]
+old == new   # True, measured against the live feed
+```
 
-- `test_flat_component_is_constant_regardless_of_region_or_amount` — asserts
-  `_flat_component()` returns `FLAT_FEE` across differing amount/region
-  combinations (including a region absent from `HANDLING_BP`).
-- `test_handling_component_applies_the_regional_basis_points` — asserts
-  `_handling_component()` alone equals `amount * HANDLING_BP[region] //
-  10000` for an EU record (non-zero bp) and an APAC record (zero bp), and
-  that `_flat_component(r) + _handling_component(r) == fee_for(r)` for both.
+Concretely, insert (`net_rows` computed once, reused by the loop):
 
-Existing `tests/test_pipeline.py` tests are left unmodified — `fee_for()`'s
-external behavior is unchanged by contract, so they must keep passing as-is.
+```python
+lines.append("Net after fees")
+lines.append("--------------")
+net_rows = list(apply_fees(accepted))
+id_width = max([len("id")] + [len(str(row["id"])) for row in net_rows])
+lines.append(f"{'id'.ljust(id_width)}  {'net'.rjust(8)}")
+lines.append(f"{'-' * id_width}  {'-' * 8}")
+for row in net_rows:
+    lines.append(f"{str(row['id']).ljust(id_width)}  {row['net']:>8}")
+```
 
-No golden-file regeneration: `fee_for()`'s output is unchanged by
-construction, and `tests/test_golden.py` is the byte-for-byte proof of that.
-I will positively confirm `git diff --stat artifacts/report.golden.txt` shows
-no changes, not just rely on the test passing.
+Character-by-character check against the live feed (`id_width` resolves to
+6): header `'id           net'`, underline `'------  --------'`, first data
+row `'R-1001       995'` — the `net` label's right edge (header, col 15) and
+every data row's right-justified field (cols 8-15) now share the same right
+boundary; the header's `net` label sits directly above the numeric column
+instead of 4 columns to its left.
+
+## Implementation steps
+
+1. In `src/report.py`, replace the `Net after fees` block (the four lines
+   quoted at the top of "Re-measurement") with the version in the previous
+   section: compute `net_rows` and `id_width` once, emit the header and
+   underline, then loop emitting `str(row['id']).ljust(id_width)` instead of
+   bare `row['id']`. No other line in `render_report()` or `_table()` changes.
+2. Regenerate the golden artifact: `python -m tools.write_golden`. Diff it to
+   confirm only the two new lines appear and every per-record `id  net` row is
+   byte-identical to before (verified above by direct comparison against the
+   live feed — `id_width` resolves to 6, matching every id's actual length,
+   so `ljust(6)` is a no-op for all five accepted records).
+3. Extend `tests/test_report.py`:
+   - `test_net_after_fees_has_a_header_and_underline` — render the report,
+     locate the `"Net after fees"` line, assert the next two lines are
+     exactly `"id           net"` and `"------  --------"` (widths from the
+     live feed's `id_width == 6`).
+   - `test_net_after_fees_columns_align_with_the_header` — for each accepted
+     record's rendered line in that block, assert its length equals the
+     header's length and that the trailing 8 characters (the `net` field)
+     line up under the header's right-justified `net` label — i.e. don't just
+     re-assert the formula, check the actual rendered column positions the
+     way codex's finding did.
+   - `test_net_after_fees_net_values_are_unchanged` — assert each accepted
+     record's line still ends with `f"{net:>8}"` and starts with
+     `str(id).ljust(id_width)`, computed independently via `apply_fees()` in
+     the test (same pattern the file already uses in
+     `test_report_lists_every_accepted_record`).
+   Checked via grep: no existing test asserts on the "Net after fees" block's
+   exact shape today — only `tests/test_golden.py` touches it, indirectly,
+   through the byte-for-byte artifact comparison. These are net-new coverage.
+4. Run the three repo gates and fix anything they surface.
 
 ## Gates (after implementation)
 
@@ -121,32 +154,55 @@ python -m pytest -q
 
 ## Two places I'd attack next (adversarial)
 
-1. Ruff's unused-argument behavior on `_flat_component(record)` — `record` is
-   unused inside that function. Will check `ruff check .` output; if it flags
-   this (repo's ruff config may or may not enable that rule — no other
-   unused-parameter pattern exists elsewhere in `src/` to compare against), I
-   will resolve it in-scope rather than suppress, by whichever means keeps the
-   two helpers symmetric.
-2. Re-diff `artifacts/report.golden.txt` after the change (`git diff --stat`)
-   to positively confirm zero bytes changed, not just that
-   `tests/test_golden.py` passes — belt-and-suspenders on the issue's
-   "byte-for-byte unchanged" constraint, since a passing test and an
-   unexamined diff would look identical if the test itself had a latent gap.
+1. `net`'s width is still the fixed 8 read off the current format string, not
+   computed from data — if a future `net` value ever needs more than 8
+   characters (unlikely given cents-based ints, but not enforced anywhere),
+   the header stays aligned but the data column would silently overflow its
+   padding. `id`'s width no longer has this problem (now data-driven via
+   `id_width`), but `net` still does; same latent risk already existed in the
+   unmodified per-record line, not introduced by this change, but worth a
+   second look since the header now visually promises an alignment the
+   fixed-width format doesn't strictly guarantee for arbitrarily large values.
+2. Re-diff `artifacts/report.golden.txt` after regenerating
+   (`git diff --stat`) to positively confirm only the two intended new lines
+   changed and every per-record line's `id` field is still byte-identical
+   (not just numerically equal-looking) — since `id_width` is now computed
+   from data rather than hardcoded, a bug in that computation (e.g. an off-by
+   caused by an unaccepted/rejected record leaking into `net_rows`) would
+   silently shift every id's padding by the same amount and could still look
+   plausible without a byte-for-byte check.
 
 ---
 
-🔍 CP1 — re-read: `src/normalise.py` (all of it, current worktree state including
-merged `#152`), `src/report.py` (to confirm `apply_fees`/`fee_for` call path and
-independence from the tags-column change), `tests/test_pipeline.py`,
-`tests/test_golden.py`, `tests/fixtures/t2/I2.md`, `TESTING.md`'s routing table,
-and the specification: `gh issue view 151` (live) plus cached `ITEM-ISSUE.md` and
-`tests/fixtures/t2/I2.md`, all read in full and cross-checked against each other
-(identical text, no drift). Also checked `#150`/`#152` (predecessor sequential
-item, merged) to confirm no overlap with `src/normalise.py`.
-Gaps found & folded in: (1) new helpers had no direct unit test path distinct
-from existing indirect coverage through `fee_for`/`apply_fees`/the golden file —
-added two direct tests; (2) no other gap — this is a mechanical, contract-
-preserving extraction with an existing regression net (`test_apply_fees_*`,
-`test_golden.py`) that already pins `fee_for()`'s exact output.
+🔍 CP1 — re-read: `src/report.py` in full (`_table()` lines 41-56, `_cell()`,
+`REPORTED_FIELDS`/`RIGHT_ALIGNED`, and the `Net after fees` block in
+`render_report()` lines 76-80), `src/normalise.py::apply_fees()` (confirms
+`id` passes through unchanged, `net` is `amount - fee_for(record)`),
+`artifacts/report.golden.txt` (current committed golden, confirmed 6-field
+header including `tags`), `tests/test_report.py` (confirmed no existing test
+pins the "Net after fees" block's exact text), `tests/test_golden.py`,
+`tools/write_golden.py`; specification: `gh issue view 154` (live)
+cross-checked against cached `ITEM-ISSUE.md` (identical). Also re-verified the
+live feed directly via `python3` (`src.records.load_records()` →
+`check_record()` → `apply_fees()`) to get real `id`/`net` values rather than
+reasoning from the golden file alone.
+
+Gaps found & folded in: (1) issue's quoted main-table header omitted `tags` —
+corrected via `gh issue edit 154` + logged comment; (2) first draft of this
+plan hardcoded the header's `id` cell to its literal 2-character width, which
+codex flagged (BLOCKING) as misaligned against real ids (`R-1001` etc., 6
+chars) — independently re-derived the column arithmetic against the live feed,
+confirmed the defect, and replaced the fixed width with `id_width` computed
+from `net_rows` the same way `_table()` computes column widths from data,
+applying it to both the header/underline **and** the per-record `id` cell
+(verified the per-record change is a byte-for-byte no-op for the current data
+by rendering old vs. new formatters and diffing); (3) issue's literal header
+example `id  net` would still misalign with the data's fixed 8-width `net`
+column if taken byte-literally — resolved by deriving the `net` cell's width
+from the existing `:>8` format rather than the literal example string,
+documented above rather than silently guessed; (4) no test currently pins the
+"Net after fees" block's shape — folded in three new tests covering the
+header/underline text, actual rendered-column alignment (not just the
+formula), and byte-unchanged net values.
 
 🔍 CP1 GATE — pending.

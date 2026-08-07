@@ -75,8 +75,12 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append("Net after fees")
     lines.append("--------------")
-    for row in apply_fees(accepted):
-        lines.append(f"{row['id']}  {row['net']:>8}")
+    net_rows = list(apply_fees(accepted))
+    id_width = max([len("id")] + [len(str(row["id"])) for row in net_rows])
+    lines.append(f"{'id'.ljust(id_width)}  {'net'.rjust(8)}")
+    lines.append(f"{'-' * id_width}  {'-' * 8}")
+    for row in net_rows:
+        lines.append(f"{str(row['id']).ljust(id_width)}  {row['net']:>8}")
     lines.append("")
 
     total_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)

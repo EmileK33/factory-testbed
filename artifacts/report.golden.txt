@@ -11,6 +11,8 @@ R-1005  Eiger Metals    EU        2750  USD       eu, crossborder
 
 Net after fees
 --------------
+id           net
+------  --------
 R-1001       995
 R-1002       403
 R-1003      9775

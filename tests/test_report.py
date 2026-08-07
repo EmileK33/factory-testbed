@@ -2,6 +2,7 @@
 
 import re
 
+from src.normalise import apply_fees
 from src.records import load_records
 from src.report import REPORTED_FIELDS, render_report
 from src.validate import VALIDATED_FIELDS, check_record
@@ -82,3 +83,63 @@ def test_report_states_how_many_reported_fields_are_validated():
         "are checked by the validation rules."
     )
     assert expected in render_report()
+
+
+def _net_after_fees_lines(text: str) -> list[str]:
+    """Return the "Net after fees" section's lines, header through last data row."""
+    lines = text.splitlines()
+    start = lines.index("Net after fees")
+    end = lines.index("", start)
+    return lines[start:end]
+
+
+def _expected_id_width(net_rows: list[dict]) -> int:
+    return max([len("id")] + [len(str(row["id"])) for row in net_rows])
+
+
+def test_net_after_fees_has_a_header_and_underline():
+    text = render_report()
+    accepted = [row for row in (check_record(r) for r in load_records()) if row]
+    net_rows = list(apply_fees(accepted))
+    id_width = _expected_id_width(net_rows)
+    block = _net_after_fees_lines(text)
+    assert block[0] == "Net after fees"
+    assert block[1] == "--------------"
+    assert block[2] == f"{'id'.ljust(id_width)}  {'net'.rjust(8)}"
+    assert block[3] == f"{'-' * id_width}  {'-' * 8}"
+
+
+def test_net_after_fees_columns_align_with_the_header():
+    """Regression test for the bug codex caught in review: a header whose `id`
+    cell was hardcoded to 2 characters produced a shorter line than the data
+    rows (real ids are longer), so the "net" label didn't sit above the net
+    values. Every line in the block — header, underline, and each data row —
+    must be the same length, or the columns don't line up.
+    """
+    text = render_report()
+    block = _net_after_fees_lines(text)
+    header, underline, *data_lines = block[2:]
+    assert data_lines, "expected at least one accepted record in the live feed"
+    assert len(underline) == len(header)
+    for line in data_lines:
+        assert len(line) == len(header), line
+
+
+def test_net_after_fees_per_record_lines_are_unchanged():
+    text = render_report()
+    accepted = [row for row in (check_record(r) for r in load_records()) if row]
+    net_rows = list(apply_fees(accepted))
+    id_width = _expected_id_width(net_rows)
+    block = _net_after_fees_lines(text)
+    data_lines = block[4:]
+    assert len(data_lines) == len(net_rows)
+    for line, row in zip(data_lines, net_rows):
+        assert line == f"{str(row['id']).ljust(id_width)}  {row['net']:>8}"
+
+
+def test_net_after_fees_header_with_no_accepted_records():
+    text = render_report(records=[])
+    block = _net_after_fees_lines(text)
+    assert block[2] == "id       net"
+    assert block[3] == "--  --------"
+    assert block[4:] == []
