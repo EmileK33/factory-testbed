@@ -1,7 +1,7 @@
 """Tests for the feed validation rules."""
 
 from src import validate
-from src.validate import check_record
+from src.validate import check_record, rejection_reason
 
 CLEAN = {
     "id": "R-2001",
@@ -62,3 +62,51 @@ def test_settlement_pairs_are_configured():
     assert ("EU", "EUR") in validate.ALLOWED_PAIRS
     assert ("NA", "USD") in validate.ALLOWED_PAIRS
     assert ("APAC", "JPY") in validate.ALLOWED_PAIRS
+
+
+def test_rejection_reason_is_none_for_a_clean_record():
+    assert rejection_reason(CLEAN) is None
+
+
+def test_rejection_reason_names_each_missing_field():
+    for field in validate.VALIDATED_FIELDS:
+        incomplete = {key: value for key, value in CLEAN.items() if key != field}
+        assert rejection_reason(incomplete) == f"missing {field}", field
+
+
+def test_rejection_reason_for_an_unrecognised_region():
+    assert rejection_reason({**CLEAN, "region": "LATAM"}) == "unrecognised region"
+
+
+def test_rejection_reason_for_an_unrecognised_currency():
+    assert rejection_reason({**CLEAN, "currency": "GBP"}) == "unrecognised currency"
+
+
+def test_rejection_reason_for_a_non_numeric_amount():
+    assert rejection_reason({**CLEAN, "amount": "n/a"}) == "amount is not a whole number"
+
+
+def test_rejection_reason_for_a_boolean_amount():
+    assert rejection_reason({**CLEAN, "amount": True}) == "amount is not a whole number"
+
+
+def test_rejection_reason_for_a_negative_amount():
+    assert rejection_reason({**CLEAN, "amount": -1}) == "negative amount"
+
+
+def test_rejection_reason_for_something_that_is_not_a_record():
+    assert rejection_reason(None) == "not a record"
+    assert rejection_reason("R-2001") == "not a record"
+
+
+def test_rejection_reason_and_check_record_agree():
+    """check_record() derives its decision from rejection_reason(); this pins that they can't drift."""
+    cases = [
+        CLEAN,
+        {**CLEAN, "currency": "GBP"},
+        {**CLEAN, "amount": -1},
+        {key: value for key, value in CLEAN.items() if key != "id"},
+        None,
+    ]
+    for record in cases:
+        assert (check_record(record) is None) == (rejection_reason(record) is not None)
