@@ -30,6 +30,17 @@ def test_parse_tags_does_not_raise_on_a_column_of_an_unusable_type():
     assert parse_tags({"na": 1}) == []
 
 
+def test_parse_tags_respects_a_quoted_comma():
+    # The docstring's own claim: a tag containing a comma is wrapped in double
+    # quotes by the upstream exporter, so it must survive as one tag, not
+    # split into two at the comma inside the quotes.
+    assert parse_tags('eu,"high,priority",settled') == ["eu", "high,priority", "settled"]
+
+
+def test_parse_tags_does_not_raise_on_an_oversized_column():
+    assert parse_tags("a" * 200_000) == []
+
+
 def test_check_record_survives_a_tags_column_that_is_not_a_string():
     from src.validate import check_record
 
