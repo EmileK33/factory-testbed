@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import re
-
-_TAG_SEPARATOR = re.compile(r",\s*")
+import csv
 
 
 def parse_tags(raw: str | None) -> list[str]:
     """Split the feed's ``tags`` column into individual tags.
 
     The column is a comma-separated list; a tag containing a comma is wrapped
-    in double quotes by the upstream exporter.
+    in double quotes by the upstream exporter. Parsed with ``csv.reader``
+    (not a regex split) so a quoted comma stays inside its tag instead of
+    being treated as a separator.
 
     A feed row is free-form JSON, so the column is not guaranteed to be a
     string. A column that is already a sequence is already split and passes
@@ -24,4 +24,9 @@ def parse_tags(raw: str | None) -> list[str]:
         return [str(tag).strip() for tag in raw if str(tag).strip()]
     if not isinstance(raw, str) or not raw:
         return []
-    return [part.strip().strip('"') for part in _TAG_SEPARATOR.split(raw) if part.strip()]
+    try:
+        rows = list(csv.reader([raw], skipinitialspace=True))
+    except csv.Error:
+        return []
+    fields = rows[0] if rows else []
+    return [part.strip() for part in fields if part.strip()]
