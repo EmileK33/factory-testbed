@@ -13,7 +13,7 @@ from src.records import load_records
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
-REPORTED_FIELDS = ("id", "name", "region", "amount", "currency")
+REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 
 RIGHT_ALIGNED = frozenset({"amount"})
 
@@ -29,6 +29,8 @@ def _missing(value: object) -> bool:
 
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
+    if field == "tags" and isinstance(value, list):
+        value = ", ".join(value)
     return "-" if _missing(value) else str(value)
 
 
@@ -86,8 +88,10 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
+    checked = [field for field in REPORTED_FIELDS if field in validate.VALIDATED_FIELDS]
     lines.append(
-        f"All {len(REPORTED_FIELDS)} reported fields are checked by the validation rules."
+        f"{len(checked)} of {len(REPORTED_FIELDS)} reported fields are checked by "
+        "the validation rules."
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
