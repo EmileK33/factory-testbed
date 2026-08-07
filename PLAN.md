@@ -1,104 +1,117 @@
-# PLAN — Issue #150: T2 negctl-parallelism I1 (sequential control)
+# PLAN — Issue #151: T2 negctl-parallelism I2 (sequential control)
 
-## Re-measurement result
+## Re-measurement against actual current source
 
-Issue text (`gh issue view 150`, matches cached `ITEM-ISSUE.md` and
-`tests/fixtures/t2/I1.md` verbatim) is **accurate against current source** —
-no `gh issue edit` correction needed. Verified:
+(Note: this worktree's `PLAN.md` previously contained a stale plan for a
+different item, #150/I1 — the tags-column work. That work is already merged
+to `main` as `#152` and is irrelevant to this item; this file replaces it.)
 
-- `src/report.py::REPORTED_FIELDS = ("id", "name", "region", "amount", "currency")`
-  does drive `_table()`'s columns (widths computed once per `_table()` call).
-- `src/validate.py::check_record()` already calls `parse_tags()` and always
-  sets `"tags"` on the returned dict (line 62), so every accepted row already
-  carries a normalised `list[str]`.
-- The report currently never reads that key — `tags` is absent from
-  `REPORTED_FIELDS` and from every rendered line.
-- `artifacts/report.golden.txt` / `tests/test_golden.py` do byte-for-byte
-  comparison, so the artifact needs regenerating via `python -m tools.write_golden`
-  (per `CLAUDE.md`), not hand-editing.
+Read `src/normalise.py` as it exists on `negctl-seq-151` (which already
+includes main's merged `#152`). `fee_for()` today:
 
-Baseline gates on the untouched tree: `compileall` clean, `ruff check .` →
-"All checks passed!", `pytest -q` → 31 passed (4 of them in `test_report.py`).
+```python
+def fee_for(record: dict) -> int:
+    """Return the total fee charged against *record*."""
+    return FLAT_FEE + record["amount"] * HANDLING_BP.get(record["region"], 0) // 10000
+```
+
+`*` and `//` are equal precedence, left-to-right, so this evaluates as
+`FLAT_FEE + ((amount * HANDLING_BP.get(region, 0)) // 10000)` — a flat
+component plus a handling component, exactly as the issue describes. The
+issue's file path, function name, and both proposed helper names
+(`_flat_component`, `_handling_component`) match the real code. **No
+correction needed via `gh issue edit`** — verified against `gh issue view 151`
+live output, which matches the cached `ITEM-ISSUE.md` and
+`tests/fixtures/t2/I2.md` verbatim.
+
+Confirmed independent of `#152` (tags column, already merged to `main` and
+present in this worktree): `#152` touched only `src/report.py`,
+`tests/test_report.py`, and regenerated `artifacts/report.golden.txt` to add
+a `tags` column. It did not touch `src/normalise.py`. `report.py` does call
+`apply_fees()` (→ `fee_for()`) to render the "Net after fees" section, so the
+golden file's byte-for-byte check *does* transitively cover `fee_for()` — that
+is exactly why the issue's stated constraints ("`fee_for()` must return an
+identical value for every input" and "golden file byte-for-byte unchanged")
+are real, checked acceptance criteria here, not boilerplate.
+
+Existing coverage found:
+- `tests/test_pipeline.py` (per `TESTING.md`'s routing table, this is the row
+  for `src/normalise.py`, "coupled to no data file") —
+  `test_apply_fees_rejects_a_negative_gross_amount`,
+  `test_apply_fees_charges_the_regional_handling_rate` (exercises `fee_for`
+  indirectly via `apply_fees`, EU region: `25 + 150` fee math).
+- `tests/test_golden.py` — byte-for-byte check of
+  `artifacts/report.golden.txt` against `render_report()`, which transitively
+  exercises `fee_for()` for every accepted record in the live feed.
+
+No labels are set on `#151`, and none on sibling issues `#150`/`#152` either
+— no labeling convention to correct.
+
+**Correction made to the issue: none.** The issue is accurate as written.
 
 ## Gaps found against Complete/Robust/Fault-tolerant (folded into the plan)
 
-1. **Empty-tags cell would misrender.** `_cell()`'s `_missing()` check is
-   `value is None or value == ""`. A record with no `tags` column normalises
-   to `[]` (via `parse_tags(record.get("tags", ""))` → `parse_tags("")` →
-   `[]`), and `[] == ""` is `False`, so today's `_missing` would treat an
-   empty tag list as *present* and `_cell` would render the literal
-   `str([])` → `"[]"` instead of the report's blank convention `"-"`. Fix:
-   extend `_missing()` to also treat `[]` as missing (safe — its only other
-   caller, the "Unlabelled records" line, never passes a list).
-2. **List values need join formatting, not `str()`.** A non-empty tags list
-   passed through the existing `str(value)` path renders as
-   `"['eu', 'high', 'priority', 'settled']"`, not a report-appropriate cell.
-   Fix: `_cell()` joins `list` values with `", "`.
-3. **"All N reported fields are checked by the validation rules" becomes
-   false once `tags` is added.** `VALIDATED_FIELDS` (id, name, amount,
-   currency, region — 5) does not and should not include `tags`:
-   `check_record()` treats tags as optional/normalised, never rejects on it.
-   Today `REPORTED_FIELDS == VALIDATED_FIELDS` in content (5 fields each), so
-   the sentence is true by coincidence. Appending `tags` makes `REPORTED_FIELDS`
-   6 items while only 5 are actually validated — the literal sentence
-   "All 6 reported fields are checked by the validation rules" would then be
-   false. Fix: compute the intersection generically (`[f for f in
-   REPORTED_FIELDS if f in validate.VALIDATED_FIELDS]`) and change the wording
-   to "`{checked} of {total} reported fields are checked by the validation
-   rules.`" — stays truthful now and if a future item (I9) adds more columns.
-4. **No test pins the empty-tags case.** Every row currently in
-   `data/records.json` happens to carry non-empty tags, so a naive test suite
-   would never exercise the blank-cell path. Add a test that calls
-   `render_report(records=[...])` with an explicit record missing the `tags`
-   key, asserting the row renders `"-"` in that column.
+1. **Complete:** the two new helpers need their own direct unit coverage, not
+   just indirect coverage through `fee_for`/`apply_fees`/the golden file —
+   otherwise a bug that cancels between the two components (e.g. swapped
+   terms) could still pass every existing assertion. Folding in two new tests
+   that check each helper's return value independently (see Tests below).
+2. **Robust:** `_flat_component` has no natural use for `record`, but giving
+   it the same `(record: dict) -> int` signature as `_handling_component`
+   keeps both callable uniformly and matches the issue's "two components"
+   framing without introducing an asymmetric private API. This is a judgment
+   call, not a defect — noting it here rather than treating it as a gap to
+   silently resolve.
+3. **Fault-tolerant:** no new failure mode is introduced — both helpers only
+   perform the same arithmetic/dict lookups `fee_for()` already performed
+   inline, on the same inputs, so any input that previously raised (e.g.
+   missing `"amount"`/`"region"` key) still raises at the same point, and no
+   input that previously succeeded can newly raise.
 
 ## Implementation
 
-**`src/report.py`**
-- `REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")`
-  (append — minimal diff, matches the notes' "extra column" framing).
-- `_missing()`: `return value is None or value == "" or value == []`.
-- `_cell()`: after the missing check, `if isinstance(value, list): return
-  ", ".join(str(item) for item in value)`; else `str(value)` as today.
-- Replace the "All N reported fields…" line with the truthful, generically
-  computed "X of Y reported fields are checked by the validation rules."
-  wording described in gap 3.
+In `src/normalise.py`, replace the single-expression `fee_for()` with:
 
-**Out of scope (flagged, not fixed):** `src/parse.py::parse_tags()`'s
-docstring claims a comma inside quotes stays one tag, but the actual splitter
-(`_TAG_SEPARATOR = re.compile(r",\s*")`) splits before stripping quotes, so
-R-1001's `"high,priority"` becomes two tags `high`, `priority` rather than
-one. This is a pre-existing defect, unrelated to wiring `tags` into
-`REPORTED_FIELDS`, and the issue's notes scope the change to `report.py`
-only. I will render what `parse_tags` actually produces (matching current,
-if arguably wrong, behavior) and report this as an escalation rather than
-fix `src/parse.py` — fixing it would also change I3's future by-tag counts
-in ways this issue doesn't ask for.
+```python
+def _flat_component(record: dict) -> int:
+    return FLAT_FEE
 
-**Tests (`tests/test_report.py`)**
-- `test_report_shows_tags_for_accepted_records` — for every accepted row,
-  assert `", ".join(tags)` appears in the rendered text.
-- `test_report_renders_a_dash_for_a_record_with_no_tags` — call
-  `render_report(records=[...])` with one well-formed record that omits the
-  `tags` key; assert its row's tags cell is `-`.
-- `test_report_states_how_many_reported_fields_are_validated` — compute the
-  expected "X of Y" string from `REPORTED_FIELDS`/`validate.VALIDATED_FIELDS`
-  the same way `report.py` will, assert it's present (not hardcoded numbers,
-  so it doesn't silently stop testing the real logic if the field sets change
-  later).
 
-**Golden artifact**
-- Regenerate via `python -m tools.write_golden` after the code change; diff
-  it by eye before committing (new `tags` column added at the right edge,
-  existing columns/values unchanged, new "X of Y reported fields…" line).
+def _handling_component(record: dict) -> int:
+    return record["amount"] * HANDLING_BP.get(record["region"], 0) // 10000
 
-**Untouched on purpose:** `TESTING.md`, `CLAUDE.md`'s artifact description —
-per `tests/fixtures/t2/I6.md`, doc catch-up is a separate item that
-deliberately waits on *every* report-shape item, not this one alone.
-`src/parse.py`, `src/summarise.py`, `data/records.json` — not implicated by
-this issue's notes.
 
-## Gates to run after implementation
+def fee_for(record: dict) -> int:
+    """Return the total fee charged against *record*."""
+    return _flat_component(record) + _handling_component(record)
+```
+
+`FLAT_FEE` and `HANDLING_BP` module constants are untouched (no public-name
+changes, per the issue's constraint). `apply_fees()` is untouched — it only
+calls `fee_for()`.
+
+## Tests
+
+Add to `tests/test_pipeline.py` (same file per `TESTING.md`'s routing row for
+fees — no reason to split it further for an internal refactor):
+
+- `test_flat_component_is_constant_regardless_of_region_or_amount` — asserts
+  `_flat_component()` returns `FLAT_FEE` across differing amount/region
+  combinations (including a region absent from `HANDLING_BP`).
+- `test_handling_component_applies_the_regional_basis_points` — asserts
+  `_handling_component()` alone equals `amount * HANDLING_BP[region] //
+  10000` for an EU record (non-zero bp) and an APAC record (zero bp), and
+  that `_flat_component(r) + _handling_component(r) == fee_for(r)` for both.
+
+Existing `tests/test_pipeline.py` tests are left unmodified — `fee_for()`'s
+external behavior is unchanged by contract, so they must keep passing as-is.
+
+No golden-file regeneration: `fee_for()`'s output is unchanged by
+construction, and `tests/test_golden.py` is the byte-for-byte proof of that.
+I will positively confirm `git diff --stat artifacts/report.golden.txt` shows
+no changes, not just rely on the test passing.
+
+## Gates (after implementation)
 
 ```
 python -m compileall -q src
@@ -106,21 +119,34 @@ python -m ruff check .
 python -m pytest -q
 ```
 
+## Two places I'd attack next (adversarial)
+
+1. Ruff's unused-argument behavior on `_flat_component(record)` — `record` is
+   unused inside that function. Will check `ruff check .` output; if it flags
+   this (repo's ruff config may or may not enable that rule — no other
+   unused-parameter pattern exists elsewhere in `src/` to compare against), I
+   will resolve it in-scope rather than suppress, by whichever means keeps the
+   two helpers symmetric.
+2. Re-diff `artifacts/report.golden.txt` after the change (`git diff --stat`)
+   to positively confirm zero bytes changed, not just that
+   `tests/test_golden.py` passes — belt-and-suspenders on the issue's
+   "byte-for-byte unchanged" constraint, since a passing test and an
+   unexamined diff would look identical if the test itself had a latent gap.
+
 ---
 
-🔍 CP1 — re-read: `src/report.py` (all of it), `src/validate.py::check_record`/`VALIDATED_FIELDS`,
-`src/parse.py::parse_tags`, `src/records.py`, `data/records.json`, `artifacts/report.golden.txt`,
-`tools/write_golden.py`, `tests/test_report.py`, `tests/test_golden.py`, `tests/test_validate.py`,
-`tests/test_parse.py`, `tests/test_pipeline.py`, `tests/test_counts.py`, `TESTING.md`, `CLAUDE.md`
-(report/golden sections), and the specification: `gh issue view 150` plus its cached copies
-`ITEM-ISSUE.md` and `tests/fixtures/t2/I1.md` (identical text), read in full, plus sibling fixtures
-`tests/fixtures/t2/{I2,I3,I5,I6,I9}.md` for forward-looking scope boundaries (I3 depends on this
-column existing; I6 owns doc catch-up and waits on all report items; I9 owns the rejection footer).
-Gaps found & folded in: (1) empty-tags cell would render `"[]"` instead of `"-"` — extended
-`_missing()`; (2) non-empty tags list would render as a Python list repr instead of a joined string
-— added list handling to `_cell()`; (3) "All N reported fields are checked by the validation rules"
-becomes false once an unvalidated field (`tags`) is reported — reworded to a generically computed
-"X of Y" count; (4) no existing data row has empty tags, so the blank-cell path needed an explicit
-test with a synthetic record.
+🔍 CP1 — re-read: `src/normalise.py` (all of it, current worktree state including
+merged `#152`), `src/report.py` (to confirm `apply_fees`/`fee_for` call path and
+independence from the tags-column change), `tests/test_pipeline.py`,
+`tests/test_golden.py`, `tests/fixtures/t2/I2.md`, `TESTING.md`'s routing table,
+and the specification: `gh issue view 151` (live) plus cached `ITEM-ISSUE.md` and
+`tests/fixtures/t2/I2.md`, all read in full and cross-checked against each other
+(identical text, no drift). Also checked `#150`/`#152` (predecessor sequential
+item, merged) to confirm no overlap with `src/normalise.py`.
+Gaps found & folded in: (1) new helpers had no direct unit test path distinct
+from existing indirect coverage through `fee_for`/`apply_fees`/the golden file —
+added two direct tests; (2) no other gap — this is a mechanical, contract-
+preserving extraction with an existing regression net (`test_apply_fees_*`,
+`test_golden.py`) that already pins `fee_for()`'s exact output.
 
 🔍 CP1 GATE — pending.
