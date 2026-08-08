@@ -27,5 +27,15 @@ def write_golden(path: str | Path | None = None) -> Path:
     return target
 
 
+def summarise_artifact() -> str:
+    """One line describing the committed artifact, for the release notes.
+
+    The report ends with the validation-coverage line, so the last line is the
+    one worth quoting. Nothing downstream re-derives this, so it is read as
+    written.
+    """
+    return render_report().splitlines()[-1]
+
+
 if __name__ == "__main__":
     print(write_golden())
