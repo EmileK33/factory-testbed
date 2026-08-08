@@ -1,7 +1,7 @@
 # Defect manifest — factory-testbed
 
-**Base SHA:** `46b485f53cf3c66bd355fc0ef51e61c89e242056`
-**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 32 passed / 0 skipped
+**Base SHA:** `08ea3b35f7be6394417c7a8ca6b11e6452b6715d`
+**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 39 passed / 0 skipped
 **Required check:** `gates` (`.github/workflows/ci.yml`), required on `main`, `enforce_admins: true`
 
 > **`a283812…` → `46b485f…`** planted **`B13`**, a second declaration-only oracle
@@ -458,6 +458,7 @@ so the discrepancy is now visible *between* fixtures rather than uniform across 
 | B11 | nullable return that cannot carry failure | `src/rates.py` | REVIEW | **yes** |
 | B12 | required check absent on head | injected at merge | MERGE | demonstrated directly |
 | B13 | oracle proving declaration — **fresh instance, B9's replacement** | `tests/test_tags.py` | REVIEW | **not yet run** — planted after the codex passes below |
+| **C1** | **uncovered caller broken by a scheduled item** | `tools/write_golden.py` | **CP2** | **not yet run** — the corpus's FIRST CP2-class defect |
 | NC1 | correct-but-unusual guard | `src/validate.py` | must not be reported | not reported ✓ |
 | NC2 | duplication with a rationale | `src/report.py` | must not be reported | not reported ✓ |
 | NC3 | deliberately narrow test | `tests/test_validate.py` | must not be reported | not reported ✓ |
@@ -1201,3 +1202,44 @@ scratch volume.
 refusals, and misses `python -m <runner>`), **#24** (`verify.py mutate` cannot score a pytest repo),
 **#25** (`parkReason` written only to a file the skill also calls disposable), **#26** (E4
 unexercisable; P4 removes P3's subject; `eol` does not cover a missing final newline).
+
+### C1 — the first CP2-class defect in this corpus, and why it took this long
+
+**Every other defect here is PRE-EXISTING, which is why none of them could ever score CP2.** CP2
+is the author re-reading *its own change* and its callers; a defect that was already in the tree
+before the item started is REVIEW's to catch, not CP2's. The `should catch at` column ran
+CP1(5) · REVIEW(8) · MERGE(1) · LIVE(1) and **zero CP2** for the whole life of this corpus, so the
+stage's effectiveness has never been measured — while `run-wave` required a CP2 marker and
+`verify.py` had no check for one. A required step, asserted by nothing: the `deadconst` shape,
+in the harness's own process.
+
+A CP2 defect therefore cannot simply be planted. It has to be a **trap a scheduled item springs**:
+
+`tools/write_golden.py::summarise_artifact()` returns `render_report().splitlines()[-1]`, and its
+docstring says why — *"the report ends with the validation-coverage line, so the last line is the
+one worth quoting."* At base that is exactly true. **`I9` appends a footer saying what was
+rejected**, and from that moment the helper quotes the rejection footer as the validation-coverage
+line, in the release notes, silently.
+
+Measured at base `08ea3b3`, simulating I9's change:
+
+```
+before : 'Validation covers: id, name, amount, currency, region'
+after  : 'Rejected 3 record(s) - see the validation rules above.'
+gates  : compileall clean · ruff clean · 39 passed        <- nothing notices
+```
+
+**Nothing can notice, and that is the point.** `pytest --collect-only` collects **0** tests from
+`tools/`, so the caller is genuinely outside the suite. No gate exercises it, no reviewer diffing
+`src/report.py` sees it, and the artifact itself is unchanged — the *reader* of the artifact is what
+breaks.
+
+**Scored at CP2 because that is the only checkpoint whose contract reaches it:** *"re-read the
+changed files and their callers/tests"*, and the marker's own `uncovered:` field — *changed files no
+gate exercises* — is the exact question whose honest answer is this defect. An item that fills that
+field with `none` while `tools/` is untested has answered it wrongly, which `verify.py cp2` can see
+is *present* but not that it is *true*. That gap is stated rather than hidden: the check asserts the
+report is COMPLETE, never that it is CORRECT.
+
+**Triggered by I9; also reachable from I1** (a tags column moves no last line, so I1 alone does not
+spring it — check before scoring). If a run reports C1, record which item's change exposed it.
