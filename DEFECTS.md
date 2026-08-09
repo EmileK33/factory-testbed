@@ -1,7 +1,7 @@
 # Defect manifest — factory-testbed
 
-**Base SHA:** `08ea3b35f7be6394417c7a8ca6b11e6452b6715d`
-**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 39 passed / 0 skipped
+**Base SHA:** `b5c6e1802f1db9617ba292ba8a401afc3dc1ddba`
+**Gates at that SHA:** `python -m compileall -q src` · `python -m ruff check .` · `python -m pytest -q` → 32 passed / 0 skipped
 **Required check:** `gates` (`.github/workflows/ci.yml`), required on `main`, `enforce_admins: true`
 
 > **`a283812…` → `46b485f…`** planted **`B13`**, a second declaration-only oracle
@@ -1202,6 +1202,18 @@ scratch volume.
 refusals, and misses `python -m <runner>`), **#24** (`verify.py mutate` cannot score a pytest repo),
 **#25** (`parkReason` written only to a file the skill also calls disposable), **#26** (E4
 unexercisable; P4 removes P3's subject; `eol` does not cover a missing final newline).
+
+> **`08ea3b3…` → `b5c6e18…`** reverted the two item implementations that the abandoned T4 rep 4
+> merged (the tags column and the fee-component split), so those items are buildable again. **Both
+> plants stay**: `KNOWN_TAGS` (B13) and `summarise_artifact` (C1). The gate count goes back
+> **39 → 32** because rep 4's tests went with its code. Re-verified on a fresh clone at `b5c6e18`:
+> B4 (`net -15`), B5 (`KeyError` on perfect input), B6 (EU/USD accepted), B7 (4 tags vs `csv`'s 3),
+> B9 (the pairs test still passes on declaration alone), B10 (the false USD line still in the
+> golden), B11 (silent zero), B13 (a bogus tag survives the splitter) all reproduce, and C1 is
+> latent-and-correct at base as designed.
+>
+> A rep whose first two items are already implemented measures nothing, and one whose first two ran
+> a different process than the rest is comparable to nothing.
 
 ### C1 — the first CP2-class defect in this corpus, and why it took this long
 
