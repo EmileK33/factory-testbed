@@ -13,7 +13,7 @@ from src.records import load_records
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
-REPORTED_FIELDS = ("id", "name", "region", "amount", "currency")
+REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 
 RIGHT_ALIGNED = frozenset({"amount"})
 
@@ -24,12 +24,20 @@ RIGHT_ALIGNED = frozenset({"amount"})
 # apart is what stops a formatting change from editing the validator's notion
 # of a missing value.
 def _missing(value: object) -> bool:
-    return value is None or value == ""
+    return value is None or value == "" or value == []
+
+
+def _format(value: object) -> str:
+    """Render a cell's value. A list (e.g. ``tags``) is joined; anything else
+    is stringified unchanged."""
+    if isinstance(value, list):
+        return ", ".join(value)
+    return str(value)
 
 
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
-    return "-" if _missing(value) else str(value)
+    return "-" if _missing(value) else _format(value)
 
 
 def _table(rows: list[dict]) -> list[str]:
@@ -86,11 +94,21 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
+    # Two raw facts, not a derived claim about coverage between them: earlier
+    # phrasing here asserted things like "All N reported fields are checked"
+    # or "N of M reported fields are checked," and both went false the moment
+    # REPORTED_FIELDS and VALIDATED_FIELDS diverged (they do today: tags is
+    # reported but not validated). Stating both field sets independently lets
+    # a reader compare them without the report asserting a relationship that
+    # the next edit to either tuple could silently falsify.
     lines.append(
-        f"All {len(REPORTED_FIELDS)} reported fields are checked by the validation rules."
+        f"Reported fields ({len(REPORTED_FIELDS)}): {', '.join(REPORTED_FIELDS)}"
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
-    lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
+    lines.append(
+        f"Validated fields ({len(validate.VALIDATED_FIELDS)}): "
+        f"{', '.join(validate.VALIDATED_FIELDS)}"
+    )
 
     return "\n".join(lines) + "\n"
