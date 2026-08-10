@@ -38,13 +38,18 @@ def _accepted(id_, tags):
 
 
 def test_by_tag_counts_each_distinct_tag_on_a_multi_tag_record():
-    counts = summarise([_accepted("R-1", "alpha,beta")])
-    assert counts["by_tag"] == {"alpha": 1, "beta": 1}
+    # "eu" and "na" are both in KNOWN_TAGS (src/parse.py) -- deliberately not
+    # using an out-of-vocabulary tag here, so this test does not depend on
+    # parse_tags() *not* filtering to KNOWN_TAGS (a separate, pre-existing,
+    # out-of-scope gap between that vocabulary and what parse_tags() actually
+    # does -- reported, not repaired, per standing ruling R2).
+    counts = summarise([_accepted("R-1", "eu,na")])
+    assert counts["by_tag"] == {"eu": 1, "na": 1}
 
 
 def test_by_tag_counts_a_tag_shared_across_two_records():
-    counts = summarise([_accepted("R-1", "shared"), _accepted("R-2", "shared")])
-    assert counts["by_tag"] == {"shared": 2}
+    counts = summarise([_accepted("R-1", "settled"), _accepted("R-2", "settled")])
+    assert counts["by_tag"] == {"settled": 2}
 
 
 def test_by_tag_counts_a_within_record_duplicate_tag_only_once():
@@ -71,7 +76,7 @@ def test_by_tag_excludes_a_rejected_records_tags():
         "amount": "not-a-number",
         "currency": "USD",
         "region": "NA",
-        "tags": "ghost",
+        "tags": "eu",
     }
     counts = summarise([rejected])
     assert counts["accepted"] == 0
@@ -94,5 +99,21 @@ def test_by_tag_is_present_and_empty_for_an_all_rejected_feed():
         "tags": "",
     }
     counts = summarise([rejected])
+    assert "by_tag" in counts
+    assert counts["by_tag"] == {}
+
+
+def test_by_tag_is_present_and_empty_for_a_totally_empty_feed():
+    # Distinct from the all-rejected-feed case above: this calls summarise([])
+    # directly -- zero records, not one rejected record -- so it is the only
+    # test in this suite that exercises summarise() taking the empty-input
+    # path through the record loop (0 iterations) rather than the
+    # one-rejected-record path (1 iteration that adds nothing to by_tag).
+    # Nothing else in this repo calls summarise([]); a mutation that
+    # special-cases "no records" with an early return before by_tag is even
+    # set would pass every other test in this file and only be caught here.
+    counts = summarise([])
+    assert counts["total"] == 0
+    assert counts["accepted"] == 0
     assert "by_tag" in counts
     assert counts["by_tag"] == {}
