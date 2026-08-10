@@ -11,11 +11,15 @@ from pathlib import Path
 
 from src.records import load_records
 from src.report import (
+    expected_table_rows,
     expected_unlabelled_line,
     render_report,
+    rendered_table_rows,
     rendered_unlabelled_line,
     report_matches_expected_shape,
+    table_column_boundaries,
 )
+from src.validate import check_record
 
 GOLDEN_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "report.golden.txt"
 
@@ -47,6 +51,24 @@ def write_golden(path: str | Path | None = None) -> Path:
     not: the raw feed, via the same ``load_records()`` ``render_report()``
     itself calls -- so this compares the emitted line against a value
     re-derived from source data by EXACT equality instead.
+
+    Also refuses to write when a settlement-table row does not match
+    ``src.report.expected_table_rows()`` computed fresh from the SAME raw
+    feed, run through ``src.validate.check_record()`` the same way
+    ``render_report()`` itself does (PR #236 review round 12, Finding 1,
+    BLOCKING): a row's per-cell CONTENT was never checked against
+    anything -- only its overall width and inter-column separator
+    positions, both purely structural -- so a mutation to ``_cell()``
+    that substitutes a fabricated sentence for one cell's real value
+    still produces a row of the CORRECT width and separators (``_table()``
+    pads to whatever the data needs, so the attacker never has to compute
+    that), and the shape check above accepts it. Three lines of code, no
+    knowledge of column widths required by the attacker at all -- see
+    ``src.report.report_matches_expected_shape()``'s own "what this still
+    does not close" paragraph for the measurement and why this is a false
+    CLAIM (one cell replaced on an otherwise-real, otherwise-consistent
+    record), not the forged-record false-DATA model that paragraph
+    otherwise still, honestly, does not close.
     """
     rendered = render_report()
     if not report_matches_expected_shape(rendered):
@@ -75,6 +97,46 @@ def write_golden(path: str | Path | None = None) -> Path:
             "regressed, expected_unlabelled_line() may itself be stale, or "
             "the two may simply disagree for a reason neither covers. "
             f"rendered: {actual_line!r} expected: {expected_line!r}."
+        )
+
+    located = rendered_table_rows(rendered)
+    if located is None:
+        raise RuntimeError(
+            "refusing to write artifacts/report.golden.txt: the rendered "
+            "text does not have the fixed settlement-table preamble "
+            "src.report.rendered_table_rows() expects, even though "
+            "report_matches_expected_shape() passed above. Read the actual "
+            "diff between the two checks' assumptions before changing "
+            "either."
+        )
+    rule_line, actual_rows = located
+    boundaries = table_column_boundaries(rule_line)
+    if boundaries is None:
+        raise RuntimeError(
+            "refusing to write artifacts/report.golden.txt: the rendered "
+            "table's rule line does not split into "
+            "len(src.report.REPORTED_FIELDS) columns, even though "
+            "report_matches_expected_shape() passed above. Read the actual "
+            "diff between the two checks' assumptions before changing "
+            "either."
+        )
+    accepted = [checked for checked in (check_record(row) for row in raw) if checked]
+    expected_rows = expected_table_rows(accepted, boundaries)
+    if actual_rows != expected_rows:
+        raise RuntimeError(
+            "refusing to write artifacts/report.golden.txt: at least one "
+            "settlement-table row does not match "
+            "src.report.expected_table_rows() by exact equality, computed "
+            "fresh from check_record(load_records()) -- the same records "
+            "render_report() itself checks and renders. "
+            "report_matches_expected_shape() cannot bound a row's CELL "
+            "CONTENT from the rendered text alone -- only its width and "
+            "separator positions -- so this checks it against the source "
+            "feed instead. Do not assume which side is wrong -- "
+            "render_report() may have regressed, expected_table_rows() may "
+            "itself be stale, or the two may simply disagree for a reason "
+            "neither covers. "
+            f"rendered: {actual_rows!r} expected: {expected_rows!r}."
         )
 
     target = Path(path) if path is not None else GOLDEN_PATH

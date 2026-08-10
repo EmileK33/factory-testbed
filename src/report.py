@@ -264,39 +264,49 @@ def report_matches_expected_shape(text: str) -> bool:
     function, and for why it succeeds where every character-pattern
     candidate on this line failed, in both directions at once.
 
-    What this still does not close, honestly:
-      - The settlement table's row count is cross-checked against the
-        net-after-fees table's row count (both are derived from the same
-        `accepted` list, in the same order, so they are ALWAYS equal in
-        real output), but neither table is cross-checked against `Records
-        accepted: N`, which is a printed number, not a re-derived one. A
-        single crafted line that also imitates a plausible settlement
-        record, inserted into BOTH tables with `Records accepted:`
-        adjusted to agree, is internally consistent under every check
-        here -- that is the forged-record threat model, adjudicated out
-        of scope for this item (it is false DATA, not a false CLAIM about
-        the data; no per-line shape check can distinguish it, and
-        tests/test_golden.py cannot serve as an independent backstop for
-        it either, since `write_golden()` re-renders the very artifact
-        that test compares against -- a source mutation changes both
-        sides at once).
-      - A settlement-table row whose content is a REPLACEMENT, not an
-        append, with each fragment padded to land exactly on the real
-        column widths (round 11 review, Finding 2: a name-column fragment
-        reading "ALL 6 REPORTED" beside an amount-column fragment reading
-        "ARE OK", etc.) satisfies the width bound, every separator
-        position, and the id cross-check below it, because it is
-        structurally indistinguishable from a real row -- it bounds
-        STRUCTURE, not MEANING, and a forged row built to that structure
-        is the same forged-record threat model as the point above, one
-        column at a time instead of one whole line. Constructing it
-        requires knowing the exact per-column widths, which depend on the
-        feed data actually rendered; not fixed, and not closed here.
+    A settlement-table row's own CELL CONTENT is not checked by this
+    function either, for the identical reason the unlabelled line's is
+    not: no field this table renders carries a format constraint from
+    check_record(), so a legitimate value and a fabricated one can be the
+    same shape and the same width -- a mutation to `_cell()` substituting
+    a sentence for one real cell's value produces a row of the CORRECT
+    width and separators, because `_table()` pads to whatever the data
+    needs (round 11 review priced this as requiring "exact per-column
+    widths, which depend on the feed data" and rated it non-blocking on
+    that basis; round 12 review measured the true cost -- three lines, no
+    width arithmetic at all, since the renderer computes the widths for
+    the attacker -- and corrected the rating). Closed the same way as the
+    unlabelled line: see expected_table_rows() below, which
+    tools/write_golden.py compares against the rendered rows by exact
+    equality against `check_record(load_records())` -- the same records
+    render_report() itself checks and renders -- rather than against
+    anything this function could check from the text alone.
+
+    What this still does not close, honestly, is the narrower residual
+    that remains once both of the above are closed: a coordinated edit to
+    BOTH a source-side function (render_report()'s own construction, or
+    `_cell()`/`_table()`) AND its independent writer-side re-derivation
+    (expected_unlabelled_line(), expected_table_rows()) passes
+    undetected, because the two sides would then agree with each other
+    while both being wrong. That is the genuine forged-record threat
+    model -- false DATA, not a false CLAIM about data honestly rendered --
+    and it is adjudicated out of scope for this item: no per-line check
+    can distinguish a coordinated lie from the truth, and
+    tests/test_golden.py cannot serve as an independent backstop for it
+    either, since `write_golden()` re-renders the very artifact that test
+    compares against. Concretely, it still covers: the settlement table's
+    row count is cross-checked against the net-after-fees table's row
+    count (both derived from the same `accepted` list, in the same order,
+    so they are ALWAYS equal in real output), but neither table is
+    cross-checked against `Records accepted: N`, which is a printed
+    number, not a re-derived one -- a single crafted record inserted into
+    BOTH tables with `Records accepted:` adjusted to agree is internally
+    consistent under every check here.
 
     Used two ways: tools/write_golden.py refuses to write an artifact that
-    fails this check (and, separately, one that fails the source-derived
-    unlabelled-line check below), and tests/test_report.py pins
-    render_report()'s own output against it the same way.
+    fails this check (and, separately, one that fails either source-
+    derived check below), and tests/test_report.py pins render_report()'s
+    own output against it the same way.
     """
     lines = text.split("\n")
     if lines and lines[-1] == "":
@@ -540,14 +550,150 @@ def expected_unlabelled_line(raw: list[dict]) -> str | None:
 
 def rendered_unlabelled_line(text: str) -> str | None:
     """The "Unlabelled records: ..." line actually present in *text*,
-    found by its fixed literal prefix regardless of what content follows
-    it -- the point is to recover whatever is really there, corrupted or
-    not, so it can be compared against expected_unlabelled_line() by exact
-    equality. None if no such line is present."""
-    return next(
-        (line for line in text.splitlines() if line.startswith("Unlabelled records:")),
-        None,
-    )
+    located by POSITION, not by scanning for its literal prefix anywhere
+    in the document (PR #236 review round 12, Finding 2, BLOCKING: a
+    decoy elsewhere -- an id or a table cell containing the literal text
+    "Unlabelled records: ..." -- shadows the real summary line under a
+    prefix scan in BOTH directions: a decoy earlier in the text gets
+    returned INSTEAD of the real line further down, which can (a) make a
+    perfectly valid report look like it disagrees with
+    expected_unlabelled_line() -- a false refusal -- and (b) make a real
+    attack on the genuine summary line invisible, because the scan never
+    reaches it).
+
+    The real line's position is fixed by construction: render_report()
+    emits it (or omits it) immediately before the "Total (USD): ..."
+    line, which is immediately before FROZEN_FOOTER_TAIL -- both fixed,
+    checkable facts about the tail of the document, independent of
+    anything earlier in it (including a decoy). Walking from the END,
+    past the byte-fixed footer and the Total line, lands on exactly that
+    position regardless of what a decoy anywhere earlier in the table,
+    the net rows, or an id contains.
+
+    Returns None both when there is legitimately no unlabelled line AND
+    when *text* does not have the expected tail shape at all (the footer
+    or the Total line is not where it should be) -- this function makes
+    no claim about overall shape; report_matches_expected_shape() already
+    covers that and is always checked first in tools/write_golden.py, so
+    by the time this runs the tail shape is guaranteed.
+    """
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    total_index = len(lines) - len(_FROZEN_FOOTER_LINES) - 1
+    if total_index < 0 or lines[total_index + 1:] != _FROZEN_FOOTER_LINES:
+        return None
+    if not _TOTAL_LINE_RE.fullmatch(lines[total_index]):
+        return None
+    candidate_index = total_index - 1
+    if candidate_index < 0:
+        return None
+    candidate = lines[candidate_index]
+    return candidate if candidate.startswith("Unlabelled records:") else None
+
+
+def table_column_boundaries(rule_line: str) -> list[tuple[int, int]] | None:
+    """Each settlement-table column's [start, end) character span, read
+    off *rule_line* by position. Splitting the RULE line on runs of 2+
+    spaces is safe in a way splitting a data row is not -- its cell
+    content is pure dashes, which can never itself contain a run of 2+
+    spaces the way a real id, name, or tag list can (see
+    report_matches_expected_shape()'s own row-loop comment for the full
+    reasoning; this is the identical technique, reused rather than
+    reimplemented). None if *rule_line* does not split into exactly
+    len(REPORTED_FIELDS) segments."""
+    widths = [len(seg) for seg in _COLUMN_GAP_RE.split(rule_line)]
+    if len(widths) != len(REPORTED_FIELDS):
+        return None
+    boundaries = []
+    start = 0
+    for width in widths:
+        boundaries.append((start, start + width))
+        start += width + 2  # +2 for _table()'s own "  " join
+    return boundaries
+
+
+def rendered_table_rows(text: str) -> tuple[str, list[str]] | None:
+    """Return (rule_line, [data_row, ...]) for the settlement table in
+    *text*, located by POSITION -- render_report()'s own fixed preamble
+    puts the banner, top rule, and a blank line first (indices 0-2), the
+    table header at index 3, and the table's own rule line at index 4;
+    every line after that up to (not including) the next blank line is a
+    data row. Independent of report_matches_expected_shape()'s own walk
+    over the same structure -- this function duplicates only the WALK,
+    never a value comparison, so a bug in one cannot mask a bug in the
+    other. None if *text* is too short to contain the fixed preamble
+    (never reached in practice: tools/write_golden.py always checks
+    report_matches_expected_shape() first, which guarantees this much
+    structure before this function ever runs)."""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    if len(lines) < 5:
+        return None
+    rule_line = lines[4]
+    rows: list[str] = []
+    pos = 5
+    while pos < len(lines) and lines[pos] != "":
+        rows.append(lines[pos])
+        pos += 1
+    return rule_line, rows
+
+
+def expected_table_rows(
+    accepted: list[dict], boundaries: list[tuple[int, int]]
+) -> list[str]:
+    """The exact row TEXT `_table()` must render for each of *accepted*'s
+    already-checked/normalised records, in order, using *boundaries*
+    (from table_column_boundaries()) for each column's WIDTH only -- the
+    width is data recovered from the rendered rule line, not logic
+    borrowed from `_table()`, so using it does not make this an oracle
+    that compares an implementation to itself.
+
+    Deliberately reimplements `_cell()`'s and `_table()`'s own formatting
+    rules (the blank-is-"-" rule, the list-join rule, ljust/rjust
+    alignment, the "  " join, and the whole-line trailing `.rstrip()`)
+    rather than calling either of them (PR #236 review round 12, Finding
+    1, BLOCKING: the reviewer's own first attempt at this called `_cell()`
+    -- the function under test -- to compute the "expected" side, which
+    made a mutation to `_cell()` invisible to both sides of the
+    comparison at once and reported a false pass; discarded and rewritten
+    to read the checked record's values directly instead, which is what
+    this does). This is exactly the independence trade already made for
+    expected_unlabelled_line() versus render_report()'s own construction,
+    for the identical reason -- see that function's own docstring. The
+    residual it carries is the same one, too: a coordinated edit to BOTH
+    this function and `_cell()`/`_table()` passes undetected, which is
+    the forged-record threat model report_matches_expected_shape()
+    already adjudicates out of scope. Ordinary, non-adversarial drift is
+    guarded the same way round 11 guarded it for the unlabelled line: see
+    tests/test_report.py::test_expected_table_rows_matches_render_reports_own_construction.
+
+    Also does NOT call `_missing()` or `_format()` -- both of those are
+    genuinely shared, general-purpose helpers `_cell()` itself calls, so
+    routing through them would put the SAME code on both sides of the
+    comparison for a mutation targeting either one, not only for a
+    mutation inside `_cell()` directly. The blank-value rule
+    (`value is None or value == ""`) and the list-join rule
+    (`", ".join(value)`) are inlined below instead, each a one-line
+    restatement small enough that its own correctness is obvious on
+    sight, same as expected_unlabelled_line()'s own inlined selection
+    logic.
+    """
+    rows = []
+    for record in accepted:
+        parts = []
+        for (start, end), field in zip(boundaries, REPORTED_FIELDS):
+            width = end - start
+            value = record.get(field)
+            is_missing = value is None or value == ""
+            if field in LIST_VALUED_FIELDS and isinstance(value, list):
+                text = "-" if (is_missing or value == []) else ", ".join(value)
+            else:
+                text = "-" if is_missing else str(value)
+            parts.append(text.rjust(width) if field in RIGHT_ALIGNED else text.ljust(width))
+        rows.append("  ".join(parts).rstrip())
+    return rows
 
 
 # Deliberately not imported from src.validate. That predicate decides what the

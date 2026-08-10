@@ -13,10 +13,13 @@ from src.report import (
     _check_list_valued_fields,
     _format,
     _missing,
+    expected_table_rows,
     expected_unlabelled_line,
     render_report,
+    rendered_table_rows,
     rendered_unlabelled_line,
     report_matches_expected_shape,
+    table_column_boundaries,
 )
 from src.validate import _missing as validate_missing
 from src.validate import check_record
@@ -1240,6 +1243,242 @@ def test_write_golden_writes_when_a_legitimate_multi_space_name_is_unlabelled(
     out = write_golden_mod.write_golden(tmp_path / "out.txt")
     assert out.exists()
     assert "Unlabelled records: ACME  Labs" in out.read_text(encoding="utf-8")
+
+
+def test_rendered_unlabelled_line_locates_by_position_not_by_a_decoy_prefix():
+    """PR #236 review round 12, Finding 2 (BLOCKING): rendered_unlabelled_line()
+    used to scan for its literal prefix ANYWHERE in the text, so a decoy
+    -- an id containing the literal text "Unlabelled records: ..." --
+    shadowed the real summary line in both directions: a decoy earlier in
+    the document could be returned INSTEAD of the real line (a false
+    refusal on a legitimate feed with no unlabelled records at all), or
+    could hide a genuine attack on the real summary line further down
+    (never reached by the scan). Sweeps both measured cases."""
+    decoy_only = [
+        {"id": "Unlabelled records: forged", "name": "Real Co", "amount": 100,
+         "currency": "USD", "region": "NA", "tags": ""},
+    ]
+    text = render_report(records=decoy_only)
+    assert expected_unlabelled_line(decoy_only) is None  # no record is missing an id
+    assert rendered_unlabelled_line(text) is None  # the decoy must NOT be picked up
+    assert rendered_unlabelled_line(text) == expected_unlabelled_line(decoy_only)
+
+    decoy_plus_real = [
+        {"id": "Unlabelled records: forged", "name": "Real Co", "amount": 100,
+         "currency": "USD", "region": "NA", "tags": ""},
+        {"id": None, "name": "Genuine Ghost", "amount": 50, "currency": "USD",
+         "region": "NA", "tags": ""},
+    ]
+    text2 = render_report(records=decoy_plus_real)
+    assert rendered_unlabelled_line(text2) == "Unlabelled records: Genuine Ghost"
+    assert rendered_unlabelled_line(text2) == expected_unlabelled_line(decoy_plus_real)
+
+
+def test_rendered_unlabelled_line_returns_none_on_a_malformed_tail():
+    """rendered_unlabelled_line() makes no claim about overall shape --
+    report_matches_expected_shape() already covers that and always runs
+    first in tools/write_golden.py. Direct-call robustness: text whose
+    tail does not have the fixed footer/Total-line structure this
+    function anchors on returns None rather than misreporting a line."""
+    assert rendered_unlabelled_line("not a real report at all") is None
+    assert rendered_unlabelled_line("") is None
+
+
+def test_the_rendered_table_rows_match_the_source_feed_on_the_real_report():
+    """PR #236 review round 12, Finding 1 (BLOCKING): a settlement-table
+    row's per-cell CONTENT was never checked against anything -- only its
+    overall width and inter-column separator positions, both purely
+    structural. A mutation to `_cell()` that substitutes a fabricated
+    sentence for one cell's real value still produces a row of the
+    CORRECT width and separators, because `_table()` pads to whatever the
+    data needs -- the renderer does the attacker's arithmetic, and no
+    knowledge of column widths is required to construct the attack.
+    `report_matches_expected_shape()` is a check on TEXT alone (width and
+    position) and was never going to close this. The actual closure runs
+    against the SOURCE feed instead: rendered_table_rows() recovers the
+    table's rule line and data rows by POSITION; expected_table_rows()
+    re-derives what each accepted (checked/normalised) record's row must
+    read, independently of `_cell()`/`_table()`. Deliberately exercises
+    the real, UNMOCKED render_report()/load_records()/check_record()
+    pipeline (unlike the monkeypatched write_golden() tests below) so
+    that a real source mutation to `_cell()` flows through this test and
+    fails it BECAUSE the two disagree, not because a `.replace()` fixture
+    literal stopped matching."""
+    raw = load_records()
+    accepted = [checked for checked in (check_record(r) for r in raw) if checked]
+    text = render_report()
+    located = rendered_table_rows(text)
+    assert located is not None
+    rule_line, actual_rows = located
+    boundaries = table_column_boundaries(rule_line)
+    assert boundaries is not None
+    assert actual_rows == expected_table_rows(accepted, boundaries)
+
+
+def test_expected_table_rows_matches_render_reports_own_construction():
+    """Drift guard for expected_table_rows()'s deliberate independence
+    from `_cell()`/`_table()` -- see expected_table_rows()'s own
+    docstring for why the two must not share code (a shared helper would
+    make the write_golden() check an oracle comparing an implementation
+    to itself; the reviewer's own first attempt at this check made
+    exactly that mistake by calling `_cell()` and had to be rewritten).
+    Independence trades security for a real maintenance risk: an
+    ordinary, non-adversarial change to `_cell()`'s formatting rules (the
+    blank-is-"-" rule, the list-join rule, alignment) and not this
+    function's own inlined copy would silently make write_golden() start
+    refusing legitimate output. This test guards against exactly that --
+    pinning the two against each other across a sweep of inputs, so an
+    accidental divergence fails a NAMED test in CI."""
+    feeds = {
+        "no accepted records": [],
+        "one plain record": [
+            {"id": "R-1", "name": "A", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "blank tags cell": [
+            {"id": "R-1", "name": "Acme", "amount": 100, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "long tag list": [
+            {"id": "R-1", "name": "Acme", "amount": 100, "currency": "USD",
+             "region": "NA", "tags": "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p"},
+        ],
+        "internal double-space name": [
+            {"id": "R-1", "name": "ACME  Labs", "amount": 100, "currency": "USD",
+             "region": "NA", "tags": "x"},
+        ],
+        "multiple records, mixed widths": [
+            {"id": "R-1", "name": "A", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+            {"id": "R-2", "name": "A Very Long Company Name Indeed Holdings",
+             "amount": 100, "currency": "USD", "region": "NA",
+             "tags": "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p"},
+        ],
+    }
+    for label, raw in feeds.items():
+        accepted = [checked for checked in (check_record(r) for r in raw) if checked]
+        text = render_report(records=raw)
+        located = rendered_table_rows(text)
+        assert located is not None, f"{label!r}: could not locate table rows"
+        rule_line, actual_rows = located
+        boundaries = table_column_boundaries(rule_line)
+        assert boundaries is not None, f"{label!r}: could not derive column boundaries"
+        assert actual_rows == expected_table_rows(accepted, boundaries), (
+            f"expected_table_rows() diverged from render_report()'s own output on {label!r}"
+        )
+
+
+def test_write_golden_refuses_to_write_when_a_table_cell_is_replaced_with_a_widening_claim(
+    tmp_path, monkeypatch
+):
+    """End-to-end reject-direction test for tools/write_golden.py's new
+    table-row source-comparison gate (PR #236 review round 12, Finding 1,
+    "Form A" -- the naive version, which is already cheap). A real
+    monkeypatch on `src.report._cell` substitutes a fabricated sentence
+    for R-1001's tags cell, then calls the REAL render_report() so
+    `_table()` genuinely repads the column to fit -- reproducing exactly
+    what a real `_cell()` mutation produces, not a hand-edited fixture.
+    `report_matches_expected_shape()` alone still ACCEPTS this text (the
+    width bound and separator positions are self-consistent, since the
+    renderer did the padding); write_golden_mod.load_records is left
+    returning the REAL feed, so the new check's re-derivation genuinely
+    disagrees. Fails BECAUSE expected_table_rows(...) !=
+    rendered_table_rows(...) inside write_golden(), not because a
+    fixture literal stopped matching -- the raised RuntimeError's own
+    message is read directly below."""
+    import src.report as report_mod
+    import tools.write_golden as write_golden_mod
+
+    real_cell = report_mod._cell
+
+    def widening_cell(row, field):
+        if field == "tags" and row.get("id") == "R-1001":
+            return "all 6 reported fields are checked by the validation rules"
+        return real_cell(row, field)
+
+    monkeypatch.setattr(report_mod, "_cell", widening_cell)
+    corrupted_text = report_mod.render_report()
+    monkeypatch.undo()  # restore _cell before anything else calls it
+
+    real_text = render_report()
+    assert corrupted_text != real_text
+    assert report_matches_expected_shape(corrupted_text)  # shape alone accepts it
+
+    monkeypatch.setattr(write_golden_mod, "render_report", lambda records=None: corrupted_text)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        write_golden_mod.write_golden(tmp_path / "out.txt")
+    assert not (tmp_path / "out.txt").exists()
+
+    message = str(excinfo.value)
+    assert "expected_table_rows" in message
+    assert "all 6 reported fields are checked by the validation rules" in message
+
+
+def test_write_golden_refuses_to_write_when_a_table_cell_is_replaced_with_a_width_preserving_claim(
+    tmp_path, monkeypatch
+):
+    """The width-preserving companion to the test above (PR #236 review
+    round 12, Finding 1, "Form B"): the substituted claim is exactly as
+    wide as the real value it replaces ("all 6 fields are validated."
+    and "eu, high, priority, settled" are both 27 characters), so the
+    rule line, every OTHER row, and every separator position are
+    byte-identical to the real report -- removing even the incidental
+    width-change noise Form A leaves behind. Must still be refused, and
+    for the same reason."""
+    import src.report as report_mod
+    import tools.write_golden as write_golden_mod
+
+    claim = "all 6 fields are validated."
+    assert len(claim) == len("eu, high, priority, settled")
+    real_cell = report_mod._cell
+
+    def width_preserving_cell(row, field):
+        if field == "tags" and row.get("id") == "R-1001":
+            return claim
+        return real_cell(row, field)
+
+    monkeypatch.setattr(report_mod, "_cell", width_preserving_cell)
+    corrupted_text = report_mod.render_report()
+    monkeypatch.undo()
+
+    real_text = render_report()
+    assert corrupted_text != real_text
+    assert report_matches_expected_shape(corrupted_text)
+
+    monkeypatch.setattr(write_golden_mod, "render_report", lambda records=None: corrupted_text)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        write_golden_mod.write_golden(tmp_path / "out.txt")
+    assert not (tmp_path / "out.txt").exists()
+
+    message = str(excinfo.value)
+    assert "expected_table_rows" in message
+    assert claim in message
+
+
+def test_write_golden_writes_when_the_table_matches_the_source_feed(tmp_path, monkeypatch):
+    """Accept-direction companion for the table-row source check, with a
+    NON-EMPTY table -- the existing multi-space-name accept test happens
+    to render an EMPTY table (its only record is unlabelled), so this
+    exercises the new check on real, populated rows: a legitimate,
+    unmutated multi-row report must still be written."""
+    import tools.write_golden as write_golden_mod
+
+    raw = [
+        {"id": "R-1", "name": "Acme  Corp", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": "settled"},
+        {"id": "R-2", "name": "Beta Co", "amount": 200, "currency": "USD",
+         "region": "NA", "tags": ""},
+    ]
+    text = render_report(records=raw)
+
+    monkeypatch.setattr(write_golden_mod, "render_report", lambda records=None: text)
+    monkeypatch.setattr(write_golden_mod, "load_records", lambda *a, **k: raw)
+
+    out = write_golden_mod.write_golden(tmp_path / "out.txt")
+    assert out.exists()
+    assert "Acme  Corp" in out.read_text(encoding="utf-8")
 
 
 def test_shape_accepts_reports_from_degenerate_feeds():
