@@ -859,6 +859,86 @@ def test_shape_accepts_an_unlabelled_line_with_several_names():
     assert report_matches_expected_shape(text)
 
 
+def test_shape_accepts_an_unlabelled_line_with_an_empty_tail():
+    """PR #236 review round 10 (found by the coordinator, not a reviewer,
+    before spending a review pass on it): a raw record with an empty id
+    AND an empty name contributes "" to `unlabelled`, so render_report()
+    legitimately emits "Unlabelled records: " with NOTHING after the
+    trailing space -- a line shape that predates this PR (the base golden
+    already has "Unlabelled records: Fennel Labs"; the renderer's own
+    choice to emit an empty name here is out of scope and not touched).
+    Round 7's `\\S+(?: \\S+)*` requires at least one token and refused
+    this, so `report_matches_expected_shape()` -- a check ADDED by this
+    PR -- would have refused output the renderer already produces on a
+    pre-existing, reachable input. Fixed by making the tail's empty case
+    an explicit alternative (the ONLY new string accepted is the empty
+    one), not by widening the pattern -- see
+    test_shape_rejects_a_false_claim_appended_after_an_empty_unlabelled_line
+    below for why an empty tail cannot be used to smuggle a claim the way
+    a wildcard could."""
+    text = render_report(records=[{"id": "", "name": ""}])
+    assert "Unlabelled records: \n" in text
+    assert report_matches_expected_shape(text)
+
+
+def test_shape_rejects_a_false_claim_appended_after_an_empty_unlabelled_line():
+    """The reject-direction companion to the accept test above: appending a
+    claim after an otherwise-empty "Unlabelled records: " line must still
+    fail. The content after the fixed "Unlabelled records: " prefix
+    becomes " -- all 6 reported fields are checked" (note the leading
+    space from the append itself, making a run of 2+ spaces overall),
+    which matches neither the empty alternative nor the single-space-token
+    alternative."""
+    text = render_report(records=[{"id": "", "name": ""}])
+    corrupted = text.replace(
+        "Unlabelled records: \n",
+        "Unlabelled records:  -- all 6 reported fields are checked by the "
+        "validation rules.\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_accepts_reports_from_degenerate_feeds():
+    """PR #236 review round 10, item 4: every over-correction on this item
+    so far tested the reject direction and assumed the accept direction
+    from a tidy example. Sweeps the accept direction across degenerate
+    inputs AS A CLASS rather than one at a time: an empty feed, a feed
+    where every record is rejected, and records missing id, missing name,
+    or missing both -- any of which, if it produced a report the gate
+    refused, would be the same finding again."""
+    degenerate_feeds = {
+        "empty feed": [],
+        "every record rejected": [
+            {"id": "R-1", "name": "X", "amount": "not-a-number",
+             "currency": "USD", "region": "NA", "tags": ""},
+        ],
+        "record missing id": [
+            {"name": "NoId", "amount": 100, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+        "record missing name": [
+            {"id": "R-1", "amount": 100, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+        "record missing both id and name": [
+            {"amount": 100, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+        "record with empty-string id and name": [
+            {"id": "", "name": "", "amount": 100, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+        "one accepted record alongside one missing id": [
+            {"id": "R-1", "name": "Ok", "amount": 100, "currency": "USD", "region": "NA",
+             "tags": "settled"},
+            {"name": "Ghost", "amount": 50, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+    }
+    for label, records in degenerate_feeds.items():
+        text = render_report(records=records)
+        assert report_matches_expected_shape(text), (
+            f"degenerate feed {label!r} produced a report the gate refuses:\n{text!r}"
+        )
+
+
 def test_shape_rejects_a_corrupted_total_line_shape():
     """Distinct from test_shape_rejects_a_report_with_no_total_line_at_all
     (which deletes the line): this corrupts the line'S SHAPE in place --

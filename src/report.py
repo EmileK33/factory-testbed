@@ -132,7 +132,22 @@ _TOTAL_LINE_RE = re.compile(r"^Total \(USD\): -?\d+\.\d{2}$")
 # multi-word ones) match; an appended clause preceded by a double space (or
 # any run of 2+ spaces) does not, because a run of 2+ spaces can never be
 # consumed as the single literal space between two `\S+` tokens.
-_UNLABELLED_LINE_RE = re.compile(r"^Unlabelled records: \S+(?: \S+)*$")
+#
+# The tail is made OPTIONAL, not widened, for one specific reachable case
+# (round 10): a raw record with an empty id AND an empty name contributes
+# `""` to `unlabelled`, so `render_report()` legitimately emits
+# "Unlabelled records: " with NOTHING after the trailing space -- a line
+# that predates this PR (the renderer's own behaviour on that input is out
+# of scope; only the gate refusing output the renderer already produces is
+# this PR's problem). The empty string is the ONLY new thing this accepts:
+# it is not `\S+` (at least one non-space token) and it is not `.+` (at
+# least one character of any kind) -- an empty tail carries no bytes at
+# all, so it cannot carry an appended claim the way a wildcard could. A
+# claim appended after an empty tail ("Unlabelled records:  -- claim",
+# note the double space) still fails: the content after the fixed
+# "Unlabelled records: " prefix is " -- claim", which starts with a space
+# and so matches neither alternative.
+_UNLABELLED_LINE_RE = re.compile(r"^Unlabelled records: (?:\S+(?: \S+)*)?$")
 
 
 def report_matches_expected_shape(text: str) -> bool:
