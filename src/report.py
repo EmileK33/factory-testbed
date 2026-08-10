@@ -78,7 +78,7 @@ FROZEN_FOOTER_TAIL = (
 )
 _FROZEN_FOOTER_LINES = FROZEN_FOOTER_TAIL.rstrip("\n").split("\n")
 
-_TABLE_RULE_RE = re.compile(r"^[- ]+$")
+_TABLE_RULE_RE = re.compile(r"^-[- ]*$")
 _TOP_RULE_RE = re.compile(r"^=+$")
 # Splits the table header on runs of 2+ spaces. Safe here in a way it is NOT
 # safe for a data row: the header's cell content IS the literal field names
@@ -87,18 +87,27 @@ _TOP_RULE_RE = re.compile(r"^=+$")
 # splitting arbitrary data (a name, a joined tag list) can, which is why
 # only the header gets this treatment and table data rows do not.
 _COLUMN_GAP_RE = re.compile(r" {2,}")
-# The old net-row check, `^\S+ {2,}-?\d+$`, over-corrected (round 6, Finding
-# 3/A3): `\S+` refuses an id containing whitespace, but check_record() never
-# validates id FORMAT, only that it is present, so a raw feed id containing a
-# space is legitimate and render_report() emits it -- a rule that can never
-# say yes on that real input is broken, not conservative. Relaxed to `.+`
-# (any non-empty content, including spaces) before the mandatory "  " and
-# trailing signed integer, which is the one part of a net row's shape
-# `f"{row['id']}  {row['net']:>8}"` that a false claim generally cannot
-# imitate (an inserted sentence does not end in a run of 2+ spaces followed
-# by digits) -- see test_shape_accepts_a_net_row_whose_id_contains_a_space
-# for the accept-direction test this change requires.
-_NET_ROW_RE = re.compile(r"^.+ {2,}-?\d+$")
+# History on this one regex, because it has now been wrong in both
+# directions:
+#   - `^\S+ {2,}-?\d+$` (original) over-corrected (round 6, Finding 3/A3):
+#     `\S+` refuses an id containing whitespace, but check_record() never
+#     validates id FORMAT, only that it is present, so a raw feed id
+#     containing a space is legitimate and render_report() emits it.
+#   - `^.+ {2,}-?\d+$` (round 6's fix) went too far the other way (round 8,
+#     Finding 1/A2, BLOCKING): `.+` grants arbitrary content INCLUDING runs
+#     of 2+ spaces, so a whole sentence spliced in before the numeric tail
+#     -- "R-1001  -- all 6 reported fields are checked ...       995" --
+#     still fullmatch'd; confirmed as a real source mutation landing in the
+#     committed artifact, 76/76 green.
+# `\S+(?: \S+)*` is the same shape as _UNLABELLED_LINE_RE's fix: one-or-more
+# SINGLE-space-separated tokens. `_table()`/`apply_fees()` both key on a
+# run of 2+ spaces as the column boundary, so a legitimate id (even one
+# containing single spaces, per A3) never contains a run of 2+ spaces
+# itself -- only an inserted claim does, which is exactly what this
+# excludes without touching the accept case. See
+# test_shape_accepts_a_net_row_whose_id_contains_a_space (accept) and
+# test_shape_rejects_a_false_claim_spliced_into_a_net_row (reject).
+_NET_ROW_RE = re.compile(r"^\S+(?: \S+)* {2,}-?\d+$")
 # Round 6 collapsed the three "Records ..." lines into one shared regex
 # applied three times -- which validates "a" known label three times, not
 # the three SPECIFIC labels in that specific order (round 7, Finding 2/A2:
@@ -156,38 +165,48 @@ def report_matches_expected_shape(text: str) -> bool:
 
       "Settlement report" / a rule of "=" / a blank line / a table header
       that splits (on runs of 2+ spaces) into exactly REPORTED_FIELDS, in
-      order / a rule of "-"/space / zero or more table data rows (content
-      not shape-validated per row -- see below) / a blank line / "Net
-      after fees" / a rule of "-" / zero or more net rows, each matching
-      free-form content, 2+ spaces, then an optionally-signed integer / a
-      blank line / "Records read: N", "Records accepted: N", "Records
-      rejected: N", each an exact match, digits only / a blank line / an
-      OPTIONAL "Unlabelled records: <non-empty>" line / a "Total (USD):
-      <amount>" line, exact shape, amount digits only (the amount's VALUE
-      is a wildcard, never pinned -- see FROZEN_FOOTER_TAIL's own comment)
-      / exactly FROZEN_FOOTER_TAIL, byte-for-byte.
+      order / a rule of "-"/space / zero or more table data rows, each no
+      LONGER than the rule row above it (bounded by width, not by a
+      character pattern -- see the row loop's own comment for why) / a
+      blank line / "Net after fees" / a rule of "-" / zero or more net
+      rows, each one-or-more single-space-separated tokens then 2+ spaces
+      then an optionally-signed integer (same principle: the boundary
+      `_table()`/`apply_fees()` actually use, not a pattern guessed at the
+      attack) / a blank line / "Records read: N", "Records accepted: N",
+      "Records rejected: N", each an exact match, digits only / a blank
+      line / an OPTIONAL "Unlabelled records: <name>[, <name>...]" line / a
+      "Total (USD): <amount>" line, exact shape, amount digits only (the
+      amount's VALUE is a wildcard, never pinned -- see FROZEN_FOOTER_TAIL's
+      own comment) / exactly FROZEN_FOOTER_TAIL, byte-for-byte.
 
-    What this deliberately does NOT check, and why that is not the same
-    gap round 5 shipped: table data rows are not validated per row, because
-    real cell content (a name, a joined tag list) can legitimately contain
-    whitespace shapes that make any per-row regex either reject legitimate
-    data or accept crafted prose -- the exact trap _NET_ROW_RE's own id
-    clause fell into above. Instead, the number of table data rows is
-    required to equal the number of net-after-fees rows (checked further
-    down, once both counts are known): render_report() derives both from
-    the same `accepted` list, in the same order, so they are ALWAYS equal
-    in real output, and an inserted extra line in either section breaks
-    that equality without needing to know what a legitimate row looks like.
-    A row's actual field-by-field content is still covered, independently,
-    by tests/test_golden.py's byte-for-byte comparison against the
-    committed artifact, by test_report_binds_tags_to_the_owning_record_row,
-    and by test_report_header_includes_tags_column. This does not close
-    every attack shape (a single crafted line that also imitates a
-    plausible settlement record, with the surrounding counts adjusted to
-    match, is a materially different and harder forgery -- out of scope
-    for what a per-line shape check can address at all), but it closes the
-    one demonstrated this round: an inserted line that is not accompanied
-    by a matching, consistent change to the sibling table.
+    The governing principle for every data-bearing line above (the header,
+    the two row sections, the unlabelled line): free-form content cannot be
+    bounded by a character pattern at all, because the data can legitimately
+    take exactly the shape the attack does (round 8 measured this directly:
+    a name containing a real internal double-space, and a legitimate id
+    containing a real space, are indistinguishable BY PATTERN from an
+    inserted claim of the same shape). Every check on such a line is instead
+    bounded by something render_report() itself GUARANTEES -- a fixed
+    column width (the table rows), the specific single-space-token boundary
+    the renderer's own join actually uses (the net rows, the unlabelled
+    line), or a count derived from the same source data (the table/net row
+    count cross-check below) -- never by a pattern chosen to match what an
+    attack is expected to look like.
+
+    What this still does not close, honestly: the settlement table's row
+    count is cross-checked against the net-after-fees table's row count
+    (both are derived from the same `accepted` list, in the same order, so
+    they are ALWAYS equal in real output), but neither table is cross-
+    checked against `Records accepted: N`, which is a printed number, not a
+    re-derived one. A single crafted line that also imitates a plausible
+    settlement record, inserted into BOTH tables with `Records accepted:`
+    adjusted to agree, is internally consistent under every check here --
+    that is the forged-record threat model, adjudicated out of scope for
+    this item (it is false DATA, not a false CLAIM about the data; no
+    per-line shape check can distinguish it, and tests/test_golden.py
+    cannot serve as an independent backstop for it either, since
+    `write_golden()` re-renders the very artifact that test compares
+    against -- a source mutation changes both sides at once).
 
     Used two ways: tools/write_golden.py refuses to write an artifact that
     fails this check, and tests/test_report.py pins render_report()'s own
@@ -226,10 +245,27 @@ def report_matches_expected_shape(text: str) -> bool:
     if at_end() or _COLUMN_GAP_RE.split(lines[pos]) != list(REPORTED_FIELDS):
         return False
     pos += 1
+    if at_end():
+        return False
+    table_rule_width = len(lines[pos])
     if not matching(_TABLE_RULE_RE):
         return False
     table_row_count = 0
     while not at_end() and lines[pos] != "":
+        # A data row can be SHORTER than the rule line (line()'s own
+        # .rstrip() drops trailing padding on a narrow last cell) but never
+        # LONGER: every column is padded to a fixed width computed as the
+        # max over all rows, so the rule row (built from those same widths)
+        # is always at least as wide as any real data row. This bounds a
+        # row by an invariant _table() itself guarantees -- not a
+        # character pattern -- so it does not reject any real row shape
+        # (verified against an internal-double-space name, a
+        # whitespace-containing id, a very long tag list, and a
+        # single-record report) while still rejecting an appended claim,
+        # which makes the row longer than the rule line that bounds its
+        # own columns (round 8, Finding 2/A3).
+        if len(lines[pos]) > table_rule_width:
+            return False
         table_row_count += 1
         pos += 1
     if not literal(""):

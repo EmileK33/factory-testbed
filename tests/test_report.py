@@ -499,6 +499,77 @@ def test_shape_accepts_a_net_row_whose_id_contains_a_space():
     assert report_matches_expected_shape(text)
 
 
+def test_shape_rejects_a_false_claim_spliced_into_a_net_row():
+    """PR #236 review round 8, Finding 1/A2 (BLOCKING): round 6's
+    `_NET_ROW_RE` relaxation (`^.+ {2,}-?\\d+$`, to fix the A3 over-
+    correction) went further than A3 required -- `.+` grants arbitrary
+    content INCLUDING runs of 2+ spaces, so a whole sentence spliced
+    before the numeric tail ("R-1001  -- all 6 reported fields are
+    checked by the validation rules       995") still fullmatch'd, real
+    source mutation, 76/76 green. The prior round's own regression test
+    for this regex used a corruption with no trailing digits -- a
+    strictly weaker attack the regex already rejected, so it never
+    actually isolated the gap. This corruption keeps the real numeric
+    tail intact, which is what made the round-6 regex's `.+` head the
+    actual hole. Fixed with the same principle as _UNLABELLED_LINE_RE:
+    `\\S+(?: \\S+)*` -- single-space-separated tokens only, which
+    `_table()`/`apply_fees()` never produce internally, so it excludes
+    exactly the runs of 2+ spaces an inserted claim needs."""
+    text = render_report()
+    corrupted = text.replace(
+        "R-1001       995\n",
+        "R-1001  -- all 6 reported fields are checked by the validation "
+        "rules       995\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_accepts_a_settlement_table_row_with_an_internal_double_space():
+    """Accept-direction test for the width-bound table-row check (round 8,
+    Finding 2/A3): a name containing a real internal run of 2+ spaces is
+    legitimate (check_record() does not validate name format) and must
+    still pass -- this is the exact case that would have produced a false
+    refusal had the fix been an exact column-gap count instead of a width
+    bound, which is why width was chosen over pattern-matching the row."""
+    text = render_report(records=[
+        {"id": "R-1", "name": "Acme  Corp", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": "settled"},
+    ])
+    assert "Acme  Corp" in text
+    assert report_matches_expected_shape(text)
+
+
+def test_shape_rejects_a_false_claim_appended_to_a_settlement_table_row():
+    """PR #236 review round 8, Finding 2/A3 (BLOCKING): settlement table
+    data rows were counted (for the round-7 cross-check against the net
+    table) but never content- or width-checked, so a claim appended to a
+    real row -- "R-1001  Aster Holdings  ...  -- all 6 reported fields are
+    checked by the validation rules" -- survived at 76/76 with zero
+    failures and published on the committed artifact's own data line. The
+    round-7 docstring's claim that row content was independently covered
+    by tests/test_golden.py's byte-for-byte comparison does not hold for
+    this threat: write_golden() re-renders the very artifact that test
+    compares against, so a source mutation changes both sides together and
+    one `python -m tools.write_golden` makes them agree again. Fixed by
+    bounding each data row's LENGTH against the rule row directly above
+    it, which _table() guarantees is always at least as wide as any real
+    row (every column is padded to a width computed as the max across all
+    rows, including the rule row's own dashes)."""
+    text = render_report()
+    corrupted = text.replace(
+        "R-1001  Aster Holdings  EU        1200  EUR       eu, high, "
+        "priority, settled\n",
+        "R-1001  Aster Holdings  EU        1200  EUR       eu, high, "
+        "priority, settled  -- all 6 reported fields are checked by the "
+        "validation rules\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
 # PR #236 review round 6, Finding 2/A2 (MEDIUM): every fixture up to this
 # point in the file INSERTS or DELETES a whole line, which the pass catches
 # downstream regardless of which specific clause "should" have caught it --
@@ -538,6 +609,26 @@ def test_shape_rejects_a_corrupted_table_rule():
     corrupted = text.replace(
         "------  --------------  ------  ------  --------  ---------------------------\n",
         "-X----  --------------  ------  ------  --------  ---------------------------\n",
+        1,
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_table_rule_of_only_spaces():
+    """PR #236 review round 8, Finding 4/A5 (LOW): `_TABLE_RULE_RE`
+    (`^[- ]+$`) accepted a rule line made entirely of spaces, with no dash
+    at all -- laxness, not an exploitable hole (no claim text can hide
+    inside a space-only line that also has to be the exact width of the
+    header it separates), but cheap to close since it was already being
+    tightened for other reasons this round. Now requires at least one "-"
+    character."""
+    text = render_report()
+    corrupted = text.replace(
+        "------  --------------  ------  ------  --------  ---------------------------\n",
+        " " * len(
+            "------  --------------  ------  ------  --------  ---------------------------"
+        ) + "\n",
         1,
     )
     assert corrupted != text
@@ -585,6 +676,23 @@ def test_shape_rejects_a_corrupted_records_accepted_line():
     text = render_report()
     corrupted = text.replace(
         "Records accepted: 5\n", "Records accepted: 5 (verified)\n", 1
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_records_rejected_line():
+    """PR #236 review round 8, Finding 3/A4 (MEDIUM): the third of the three
+    per-label regexes (_RECORDS_REJECTED_RE) had no in-place fixture of its
+    own -- round 7 added one for "Records read:" (the P6 regression test)
+    and one for "Records accepted:" (directly above), but not for
+    "Records rejected:", which the consume-preserving clause sweep found
+    genuinely unpinned: deletable from the source with the full suite
+    still green. Closes the gap; 14 of 14 clauses now have their own
+    in-place fixture."""
+    text = render_report()
+    corrupted = text.replace(
+        "Records rejected: 3\n", "Records rejected: 3 (verified)\n", 1
     )
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
