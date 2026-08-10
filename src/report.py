@@ -277,13 +277,39 @@ def report_matches_expected_shape(text: str) -> bool:
     if at_end():
         return False
     table_rule_width = len(lines[pos])
-    # The id column's width, read off the RULE line specifically, not a
-    # data row. This split is safe (unlike splitting a data row) because
-    # the rule line's cell content is pure dashes -- it can never itself
+    # Every column's width, read off the RULE line specifically, not a data
+    # row. This split is safe (unlike splitting a data row) because the
+    # rule line's cell content is pure dashes -- it can never itself
     # contain a run of 2+ spaces the way a real id or name can -- so
     # _COLUMN_GAP_RE.split() always recovers the true column boundaries
     # here, the same reasoning that makes splitting the header safe too.
-    id_column_width = len(_COLUMN_GAP_RE.split(lines[pos])[0])
+    column_widths = [len(seg) for seg in _COLUMN_GAP_RE.split(lines[pos])]
+    if len(column_widths) != len(REPORTED_FIELDS):
+        return False
+    id_column_width = column_widths[0]
+    # The POSITION, in the row, immediately after each non-last column's
+    # own width -- this is where the literal "  " join separator must sit
+    # for every real row (round 10, Finding 1/A1: the width bound alone
+    # does not check CONTENT, only length, so a claim that happens to fit
+    # inside the table's own legitimate width -- "R-1001  all 6 reported
+    # fields are checked by the validation rules", 65 characters against a
+    # 77-character rule line -- passed with the gate green). Every
+    # _cell() value is non-empty (a blank cell renders "-", never ""), so
+    # a real row always has real, non-space content in every column, and
+    # `_table()`'s `line()` joins ljust-padded cells with EXACTLY two
+    # literal spaces -- no more, no less -- between them; only the very
+    # end of the whole line can be shortened by `line()`'s own
+    # `.rstrip()`. So checking that exactly two spaces sit at each of
+    # these positions is a POSITIONAL check derived from the rule line,
+    # not a pattern guessed at the attack, and it does not require
+    # splitting the row's own content by delimiter the way an earlier,
+    # abandoned column-count oracle did.
+    separator_positions: list[int] = []
+    running = 0
+    for width in column_widths[:-1]:
+        running += width
+        separator_positions.append(running)
+        running += 2
     if not matching(_TABLE_RULE_RE):
         return False
     table_row_count = 0
@@ -318,6 +344,15 @@ def report_matches_expected_shape(text: str) -> bool:
         # introduces or could fix by checking differently.
         if len(lines[pos]) > table_rule_width:
             return False
+        # Verify a real separator sits at every inter-column boundary this
+        # row reaches. A boundary beyond the row's own (possibly
+        # rstrip()-shortened) length is fine -- that only means the final
+        # column or two were short enough to have their trailing padding
+        # stripped -- but a boundary the row DOES reach must be exactly
+        # "  ", never anything else.
+        for boundary in separator_positions:
+            if boundary + 2 <= len(lines[pos]) and lines[pos][boundary:boundary + 2] != "  ":
+                return False
         # The id column is always the first `id_column_width` characters,
         # ljust-padded by _table() regardless of any other column's
         # content -- a FIXED-WIDTH PREFIX SLICE, unlike delimiter

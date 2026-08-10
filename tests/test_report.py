@@ -611,6 +611,89 @@ def test_shape_rejects_a_false_claim_appended_to_a_settlement_table_row():
     assert not report_matches_expected_shape(corrupted)
 
 
+def test_shape_rejects_a_within_width_claim_spliced_into_a_settlement_table_row():
+    """PR #236 review round 10, Finding 1 (BLOCKING): the width bound above
+    (`len(row) <= len(rule_line)`) checks LENGTH, not CONTENT, so a claim
+    that happens to FIT inside the table's own legitimate width still
+    published, gate green: replacing the whole R-1001 row with
+    "R-1001  all 6 reported fields are checked by the validation rules"
+    (65 characters against a 77-character rule line) passed every prior
+    check in this file, none of which caught it -- the round-8 fix above
+    tests a claim APPENDED past the rule width, a strictly easier case.
+    Closed by deriving each column's boundary from the rule line by
+    position and requiring the literal "  " `_table()` always emits there;
+    this claim has no real column structure at all, so it fails at the
+    very first boundary."""
+    text = render_report()
+    short_claim = (
+        "R-1001  all 6 reported fields are checked by the validation rules"
+    )
+    assert len(short_claim) < len(
+        "------  --------------  ------  ------  --------  ---------------------------"
+    )
+    corrupted = text.replace(
+        "R-1001  Aster Holdings  EU        1200  EUR       eu, high, "
+        "priority, settled\n",
+        short_claim + "\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_accepts_the_degenerate_table_row_class():
+    """Accept-direction sweep for the round-10 separator-position check,
+    run as a class rather than one tidy example at a time -- the pattern
+    every prior over-correction in this item shared was an accept-half
+    tested against a single well-behaved case instead of the degenerate
+    set the check must not reject. None of check_record()'s validated
+    fields constrain name/tags content at all, so each of these is
+    legitimate, reachable render_report() output: a name wide enough to
+    force the id column's own width computation to move, a long joined
+    tag list, a name with an internal double space (the exact shape the
+    prior over-correction refused), and a record whose tags cell renders
+    as the blank placeholder "-"."""
+    wide_name = render_report(records=[
+        {"id": "R-1", "name": "A Very Long Company Name Indeed Holdings",
+         "amount": 100, "currency": "USD", "region": "NA", "tags": "x"},
+    ])
+    assert report_matches_expected_shape(wide_name)
+
+    long_tags = render_report(records=[
+        {"id": "R-1", "name": "Acme", "amount": 100, "currency": "USD",
+         "region": "NA",
+         "tags": "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p"},
+    ])
+    assert report_matches_expected_shape(long_tags)
+
+    two_space_name = render_report(records=[
+        {"id": "R-1", "name": "ACME  Labs", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": "x"},
+    ])
+    assert "ACME  Labs" in two_space_name
+    assert report_matches_expected_shape(two_space_name)
+
+    empty_tags_cell = render_report(records=[
+        {"id": "R-1", "name": "Acme", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": ""},
+    ])
+    assert report_matches_expected_shape(empty_tags_cell)
+
+    # And the class together, in one multi-row report, so the width/
+    # separator math is exercised against columns whose widths are driven
+    # by different rows at once (not every row supplying the max width).
+    mixed = render_report(records=[
+        {"id": "R-1", "name": "A", "amount": 1, "currency": "USD",
+         "region": "NA", "tags": ""},
+        {"id": "R-2", "name": "A Very Long Company Name Indeed Holdings",
+         "amount": 100, "currency": "USD", "region": "NA",
+         "tags": "a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p"},
+        {"id": "R-3", "name": "ACME  Labs", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": "x"},
+    ])
+    assert report_matches_expected_shape(mixed)
+
+
 # PR #236 review round 6, Finding 2/A2 (MEDIUM): every fixture up to this
 # point in the file INSERTS or DELETES a whole line, which the pass catches
 # downstream regardless of which specific clause "should" have caught it --
