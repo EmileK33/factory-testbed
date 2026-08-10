@@ -483,14 +483,13 @@ def test_shape_rejects_a_crafted_double_spaced_row_among_the_table_data():
 
 def test_shape_accepts_a_net_row_whose_id_contains_a_space():
     """PR #236 review round 6, Finding 3/A3 (the item's first over-
-    correction): the original _NET_ROW_RE (`^\\S+ {2,}-?\\d+$`) refused an
+    correction): the original net-row regex (`^\\S+ {2,}-?\\d+$`) refused an
     id containing whitespace, but check_record() never validates id
     FORMAT -- only that it is present -- so a raw feed id containing a
     space is legitimate, render_report() emits it, and the old regex made
     write_golden() refuse a genuinely correct artifact. Every round before
     this one tested only that the gate REJECTS bad input; this is the
-    first test that it still ACCEPTS good input. _NET_ROW_RE now allows
-    arbitrary content before the mandatory "  " + signed-integer tail."""
+    first test that it still ACCEPTS good input."""
     text = render_report(records=[
         {"id": "R 1001", "name": "Spacey", "amount": 100, "currency": "USD",
          "region": "NA", "tags": "settled"},
@@ -499,22 +498,41 @@ def test_shape_accepts_a_net_row_whose_id_contains_a_space():
     assert report_matches_expected_shape(text)
 
 
+def test_shape_accepts_a_net_row_whose_id_contains_two_consecutive_spaces():
+    """PR #236 review round 9, Finding 1 (BLOCKING) -- the item's third
+    over-correction, caught before shipping a review pass on it: round 8's
+    `_NET_ROW_RE` fix, `^\\S+(?: \\S+)* {2,}-?\\d+$` (single-space-separated
+    tokens, the same shape that correctly closed _UNLABELLED_LINE_RE's
+    equivalent gap), still refused an id containing TWO consecutive
+    spaces -- `check_record()` places no format constraint on id at all, so
+    "R  1001" is exactly as legitimate as "R 1001", and the single-space-
+    token principle that works for the comma-joined unlabelled line does
+    not hold for a free-form id. The prior test above verified ONE space;
+    this is the class, not the example. Net rows are no longer pattern-
+    matched against the id's own content at all -- see
+    report_matches_expected_shape()'s own comment for the fixed-width
+    cross-check against the settlement table that replaced it."""
+    text = render_report(records=[
+        {"id": "R  1001", "name": "Spacey", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": "settled"},
+    ])
+    assert "R  1001        70" in text
+    assert report_matches_expected_shape(text)
+
+
 def test_shape_rejects_a_false_claim_spliced_into_a_net_row():
-    """PR #236 review round 8, Finding 1/A2 (BLOCKING): round 6's
-    `_NET_ROW_RE` relaxation (`^.+ {2,}-?\\d+$`, to fix the A3 over-
-    correction) went further than A3 required -- `.+` grants arbitrary
+    """PR #236 review round 8, Finding 1/A2 (BLOCKING): round 6's net-row
+    regex relaxation (`^.+ {2,}-?\\d+$`, to fix the round-6 A3
+    over-correction) went further than A3 required -- `.+` grants arbitrary
     content INCLUDING runs of 2+ spaces, so a whole sentence spliced
     before the numeric tail ("R-1001  -- all 6 reported fields are
     checked by the validation rules       995") still fullmatch'd, real
-    source mutation, 76/76 green. The prior round's own regression test
-    for this regex used a corruption with no trailing digits -- a
-    strictly weaker attack the regex already rejected, so it never
-    actually isolated the gap. This corruption keeps the real numeric
-    tail intact, which is what made the round-6 regex's `.+` head the
-    actual hole. Fixed with the same principle as _UNLABELLED_LINE_RE:
-    `\\S+(?: \\S+)*` -- single-space-separated tokens only, which
-    `_table()`/`apply_fees()` never produce internally, so it excludes
-    exactly the runs of 2+ spaces an inserted claim needs."""
+    source mutation, 76/76 green. Round 9 replaced pattern-matching this
+    line entirely with a cross-check against the settlement table's own
+    id (see report_matches_expected_shape()'s comment), which still
+    closes this exact attack: the net row no longer starts with the
+    table-validated id followed by exactly two spaces once a claim is
+    spliced in."""
     text = render_report()
     corrupted = text.replace(
         "R-1001       995\n",
@@ -538,6 +556,29 @@ def test_shape_accepts_a_settlement_table_row_with_an_internal_double_space():
          "region": "NA", "tags": "settled"},
     ])
     assert "Acme  Corp" in text
+    assert report_matches_expected_shape(text)
+
+
+def test_shape_accepts_non_ascii_content_in_the_settlement_table():
+    """PR #236 review round 9, item 4 (raised as a self-flagged question,
+    answered here rather than left implicit): the table-row width bound
+    compares `len()`, which counts Python str codepoints, not terminal
+    DISPLAY columns. check_record() places no encoding constraint on any
+    field, so non-ASCII content (accented Latin, CJK) is legitimate feed
+    input. Verified this does not create a false refusal: `_table()`'s own
+    column-width computation (`widths = [... len(_cell(...)) ...]`) uses
+    the identical `len()` semantics this check does, so both sides of the
+    comparison are measured consistently regardless of script. Only
+    terminal DISPLAY alignment (a CJK character occupying two visual
+    columns per codepoint) could differ from what `len()` reports, which
+    is a pre-existing property of `_table()`'s own rendering, not something
+    this check introduces or could address by measuring differently."""
+    text = render_report(records=[
+        {"id": "R-1", "name": "Über Corp", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": "settled"},
+        {"id": "R-2", "name": "田中太郎", "amount": 200,
+         "currency": "USD", "region": "NA", "tags": "settled"},
+    ])
     assert report_matches_expected_shape(text)
 
 
@@ -731,19 +772,39 @@ def test_shape_rejects_a_repeated_records_label():
 
 
 def test_shape_rejects_a_net_row_whose_content_is_replaced_in_place():
-    """PR #236 review round 7, Finding 2: c7 (_NET_ROW_RE) is masked by the
-    round-6 row-count cross-check for INSERTED/DELETED lines (which the
-    cross-check catches via the count mismatch), but not for a net row
+    """PR #236 review round 7, Finding 2: the net-row shape check is masked
+    by the round-6 row-count cross-check for INSERTED/DELETED lines (which
+    the cross-check catches via the count mismatch), but not for a net row
     whose content is REPLACED with something differently-shaped while the
-    total row count stays the same -- only _NET_ROW_RE's own fullmatch
-    catches that. Preserves the row count (one line swapped for one line)
-    so this isolates the shape check specifically."""
+    total row count stays the same -- only the net row's own content check
+    catches that (since round 9, the id-cross-check against the settlement
+    table, described in report_matches_expected_shape()'s own comment).
+    Preserves the row count (one line swapped for one line) so this
+    isolates the shape check specifically."""
     text = render_report()
     corrupted = text.replace(
         "R-1001       995\n",
         "All 6 reported fields are checked by the validation rules.\n",
         1,
     )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_net_row_with_a_mismatched_id():
+    """PR #236 review round 9, follow-up self-check: isolates the
+    id-cross-check clause specifically from the trailing amount-shape
+    check, since a mutation removing ONLY the id-prefix match (found by
+    re-verifying this clause's own mutation-kill after round 9's redesign)
+    survived when tested only against a sentence-splicing attack -- the
+    amount-shape check alone already rejects a non-numeric tail, masking
+    the id check's own absence. This corruption keeps the amount portion
+    perfectly valid (a real, correctly-shaped integer) and changes only
+    the id, which the amount check cannot see: it must be the id
+    cross-check specifically that rejects a forged id with an otherwise
+    well-formed net row."""
+    text = render_report()
+    corrupted = text.replace("R-1001       995\n", "FAKE-999       995\n", 1)
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
 

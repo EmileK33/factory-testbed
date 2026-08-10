@@ -87,8 +87,8 @@ _TOP_RULE_RE = re.compile(r"^=+$")
 # splitting arbitrary data (a name, a joined tag list) can, which is why
 # only the header gets this treatment and table data rows do not.
 _COLUMN_GAP_RE = re.compile(r" {2,}")
-# History on this one regex, because it has now been wrong in both
-# directions:
+# History on net-row validation, because a character pattern has now been
+# wrong in both directions and a THIRD pattern attempt was wrong again:
 #   - `^\S+ {2,}-?\d+$` (original) over-corrected (round 6, Finding 3/A3):
 #     `\S+` refuses an id containing whitespace, but check_record() never
 #     validates id FORMAT, only that it is present, so a raw feed id
@@ -96,18 +96,23 @@ _COLUMN_GAP_RE = re.compile(r" {2,}")
 #   - `^.+ {2,}-?\d+$` (round 6's fix) went too far the other way (round 8,
 #     Finding 1/A2, BLOCKING): `.+` grants arbitrary content INCLUDING runs
 #     of 2+ spaces, so a whole sentence spliced in before the numeric tail
-#     -- "R-1001  -- all 6 reported fields are checked ...       995" --
-#     still fullmatch'd; confirmed as a real source mutation landing in the
-#     committed artifact, 76/76 green.
-# `\S+(?: \S+)*` is the same shape as _UNLABELLED_LINE_RE's fix: one-or-more
-# SINGLE-space-separated tokens. `_table()`/`apply_fees()` both key on a
-# run of 2+ spaces as the column boundary, so a legitimate id (even one
-# containing single spaces, per A3) never contains a run of 2+ spaces
-# itself -- only an inserted claim does, which is exactly what this
-# excludes without touching the accept case. See
-# test_shape_accepts_a_net_row_whose_id_contains_a_space (accept) and
-# test_shape_rejects_a_false_claim_spliced_into_a_net_row (reject).
-_NET_ROW_RE = re.compile(r"^\S+(?: \S+)* {2,}-?\d+$")
+#     still fullmatch'd.
+#   - `^\S+(?: \S+)* {2,}-?\d+$` (round 8's fix, the same single-space-token
+#     shape that correctly closed _UNLABELLED_LINE_RE's equivalent gap) was
+#     ALSO wrong (round 9, Finding 1, BLOCKING): it refuses an id containing
+#     TWO consecutive spaces ("R  1001"), which check_record() still
+#     accepts and render_report() still emits. The single-space-token
+#     principle works for the UNLABELLED line (names are joined with ", ",
+#     a fixed single-space-after-comma format the renderer controls) but
+#     does NOT work here, because the id's own content is free-form and
+#     under no such constraint -- the exact trap the table-row gap-count
+#     check fell into one round earlier, now in a fourth guise.
+# No pattern can distinguish a legitimate multi-space id from an inserted
+# claim of the same shape, so this line is no longer pattern-matched at
+# all. It is instead cross-checked against the id already recovered from
+# the corresponding SETTLEMENT TABLE row via a fixed-width prefix slice
+# (see the row loop above, and _NET_AMOUNT_RE below for the remainder).
+_NET_AMOUNT_RE = re.compile(r"^\s*-?\d+$")
 # Round 6 collapsed the three "Records ..." lines into one shared regex
 # applied three times -- which validates "a" known label three times, not
 # the three SPECIFIC labels in that specific order (round 7, Finding 2/A2:
@@ -169,27 +174,36 @@ def report_matches_expected_shape(text: str) -> bool:
       LONGER than the rule row above it (bounded by width, not by a
       character pattern -- see the row loop's own comment for why) / a
       blank line / "Net after fees" / a rule of "-" / zero or more net
-      rows, each one-or-more single-space-separated tokens then 2+ spaces
-      then an optionally-signed integer (same principle: the boundary
-      `_table()`/`apply_fees()` actually use, not a pattern guessed at the
-      attack) / a blank line / "Records read: N", "Records accepted: N",
-      "Records rejected: N", each an exact match, digits only / a blank
-      line / an OPTIONAL "Unlabelled records: <name>[, <name>...]" line / a
-      "Total (USD): <amount>" line, exact shape, amount digits only (the
-      amount's VALUE is a wildcard, never pinned -- see FROZEN_FOOTER_TAIL's
-      own comment) / exactly FROZEN_FOOTER_TAIL, byte-for-byte.
+      rows, each required to start with the SAME id already recovered from
+      the corresponding settlement-table row (a fixed-width slice, not a
+      pattern -- see _NET_AMOUNT_RE's own comment for why the id itself is
+      never pattern-matched), followed by two spaces and an optionally-
+      signed integer / a blank line / "Records read: N", "Records
+      accepted: N", "Records rejected: N", each an exact match, digits
+      only / a blank line / an OPTIONAL "Unlabelled records:
+      <name>[, <name>...]" line / a "Total (USD): <amount>" line, exact
+      shape, amount digits only (the amount's VALUE is a wildcard, never
+      pinned -- see FROZEN_FOOTER_TAIL's own comment) / exactly
+      FROZEN_FOOTER_TAIL, byte-for-byte.
 
     The governing principle for every data-bearing line above (the header,
     the two row sections, the unlabelled line): free-form content cannot be
     bounded by a character pattern at all, because the data can legitimately
-    take exactly the shape the attack does (round 8 measured this directly:
-    a name containing a real internal double-space, and a legitimate id
-    containing a real space, are indistinguishable BY PATTERN from an
-    inserted claim of the same shape). Every check on such a line is instead
-    bounded by something render_report() itself GUARANTEES -- a fixed
-    column width (the table rows), the specific single-space-token boundary
-    the renderer's own join actually uses (the net rows, the unlabelled
-    line), or a count derived from the same source data (the table/net row
+    take exactly the shape the attack does. Measured directly, twice: a
+    table-row name containing a real internal double-space (round 8), and a
+    net-row id containing real DOUBLE spaces, not just one (round 9) --
+    the single-space-token pattern that correctly fixed the unlabelled
+    line one round earlier still assumes the field never contains a run of
+    2+ spaces, which is true for names joined with ", " but not true for an
+    arbitrary feed id. Every check on such a line is instead bounded by
+    something render_report() itself GUARANTEES -- a fixed column width
+    (the table rows), an exact cross-check against a value already
+    recovered from elsewhere in the SAME rendered text via a fixed-width
+    slice rather than a delimiter split (the net rows, cross-checked
+    against the table rows' own id column), the specific single-space-token
+    boundary the renderer's own join actually uses where that boundary
+    really is fixed by construction (the unlabelled line's ", "-joined
+    names), or a count derived from the same source data (the table/net row
     count cross-check below) -- never by a pattern chosen to match what an
     attack is expected to look like.
 
@@ -248,9 +262,17 @@ def report_matches_expected_shape(text: str) -> bool:
     if at_end():
         return False
     table_rule_width = len(lines[pos])
+    # The id column's width, read off the RULE line specifically, not a
+    # data row. This split is safe (unlike splitting a data row) because
+    # the rule line's cell content is pure dashes -- it can never itself
+    # contain a run of 2+ spaces the way a real id or name can -- so
+    # _COLUMN_GAP_RE.split() always recovers the true column boundaries
+    # here, the same reasoning that makes splitting the header safe too.
+    id_column_width = len(_COLUMN_GAP_RE.split(lines[pos])[0])
     if not matching(_TABLE_RULE_RE):
         return False
     table_row_count = 0
+    table_ids: list[str] = []
     while not at_end() and lines[pos] != "":
         # A data row can be SHORTER than the rule line (line()'s own
         # .rstrip() drops trailing padding on a narrow last cell) but never
@@ -264,8 +286,32 @@ def report_matches_expected_shape(text: str) -> bool:
         # single-record report) while still rejecting an appended claim,
         # which makes the row longer than the rule line that bounds its
         # own columns (round 8, Finding 2/A3).
+        # `len()` here counts Python str codepoints, not terminal DISPLAY
+        # columns -- a CJK character can occupy two terminal columns while
+        # being one codepoint, for instance. That distinction does not
+        # create an inconsistency here (round 9, asked and verified): both
+        # sides of this comparison use the same `len()` semantics --
+        # `_table()`'s own `ljust()`/`rjust()` padding is computed via
+        # `len()` too (see `_table()`'s `widths` line), so the rule line's
+        # width and a real row's width are measured the identical way that
+        # produced them, non-ASCII content included. Verified against a
+        # name containing accented Latin and CJK characters: renders
+        # correctly, passes this check. Only DISPLAY alignment (how the
+        # artifact looks in a terminal that renders CJK as double-width)
+        # could differ from what `len()` reports, and that is a rendering
+        # concern _table() already has -- not a new one this check
+        # introduces or could fix by checking differently.
         if len(lines[pos]) > table_rule_width:
             return False
+        # The id column is always the first `id_column_width` characters,
+        # ljust-padded by _table() regardless of any other column's
+        # content -- a FIXED-WIDTH PREFIX SLICE, unlike delimiter
+        # splitting, is safe even when the id itself contains a run of 2+
+        # spaces (round 9, Finding 1: this is what net rows are
+        # cross-checked against below, instead of pattern-matching the
+        # id's own content, which cannot distinguish a legitimate
+        # double-spaced id from an inserted claim of the same shape).
+        table_ids.append(lines[pos][:id_column_width].rstrip())
         table_row_count += 1
         pos += 1
     if not literal(""):
@@ -277,8 +323,26 @@ def report_matches_expected_shape(text: str) -> bool:
         return False
     net_row_count = 0
     while not at_end() and lines[pos] != "":
-        if not matching(_NET_ROW_RE):
+        # Cross-checked against the settlement table's own id, extracted
+        # above via a fixed-width slice, rather than pattern-matched --
+        # round 8's `_NET_ROW_RE` (`\S+(?: \S+)* {2,}-?\d+$`) refused a
+        # legitimate id containing two consecutive spaces
+        # ("R  1001"), because no character pattern can distinguish that
+        # from a claim spliced in the same shape (round 9, Finding 1,
+        # BLOCKING). The net row's own format,
+        # `f"{row['id']}  {row['net']:>8}"`, is exactly the id, two
+        # literal spaces, then the net amount -- so requiring an EXACT
+        # prefix match against the id already validated from the table
+        # (not a pattern over what that id may contain) closes the
+        # attack without touching the accept case for any id shape.
+        if net_row_count >= len(table_ids):
             return False
+        expected_prefix = table_ids[net_row_count] + "  "
+        if not lines[pos].startswith(expected_prefix):
+            return False
+        if not _NET_AMOUNT_RE.fullmatch(lines[pos][len(expected_prefix):]):
+            return False
+        pos += 1
         net_row_count += 1
     if table_row_count != net_row_count:
         return False
