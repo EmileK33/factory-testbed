@@ -45,11 +45,19 @@ def write_golden(path: str | Path | None = None) -> Path:
 
 
 def summarise_artifact() -> str:
-    """One line describing the committed artifact, for the release notes.
+    """One line describing the committed artifact, for the release notes:
+    whatever render_report()'s LAST line currently is.
 
-    The report ends with the validation-coverage line, so the last line is the
-    one worth quoting. Nothing downstream re-derives this, so it is read as
-    written.
+    Deliberately not a claim about which fact that line states. An earlier
+    version of this docstring said "the report ends with the
+    validation-coverage line" -- true when written, false after this item's
+    Phase B round 3 reordered the footer (the last line is now
+    "Settlement pairs in force: ..."; see src.report.FROZEN_FOOTER_TAIL for
+    the footer's real, current shape). This item's whole review history is
+    built from exactly that failure mode: a claim about content, next to
+    the code, going stale the moment the content changes under it. The safe
+    version of this docstring makes no claim to go stale -- it names the
+    mechanism (last line, always) rather than a specific line's meaning.
     """
     return render_report().splitlines()[-1]
 
