@@ -99,9 +99,26 @@ _COLUMN_GAP_RE = re.compile(r" {2,}")
 # by digits) -- see test_shape_accepts_a_net_row_whose_id_contains_a_space
 # for the accept-direction test this change requires.
 _NET_ROW_RE = re.compile(r"^.+ {2,}-?\d+$")
-_COUNT_LINE_RE = re.compile(r"^Records (?:read|accepted|rejected): \d+$")
+# Round 6 collapsed the three "Records ..." lines into one shared regex
+# applied three times -- which validates "a" known label three times, not
+# the three SPECIFIC labels in that specific order (round 7, Finding 2/A2:
+# "read/read/rejected", "rejected/accepted/read", and "read/read/read" all
+# passed). Each line now owns its own exact literal label.
+_RECORDS_READ_RE = re.compile(r"^Records read: \d+$")
+_RECORDS_ACCEPTED_RE = re.compile(r"^Records accepted: \d+$")
+_RECORDS_REJECTED_RE = re.compile(r"^Records rejected: \d+$")
 _TOTAL_LINE_RE = re.compile(r"^Total \(USD\): -?\d+\.\d{2}$")
-_UNLABELLED_LINE_RE = re.compile(r"^Unlabelled records: .+$")
+# `.+` after "Unlabelled records: " (round 6's version) was `fullmatch`
+# against a wildcard -- the same unconstrained tail `startswith` had, just
+# spelled differently (round 7, Finding 1/A1: the P8 attack -- a suffix
+# appended after the real name, "Fennel Labs  -- all 6 reported fields are
+# checked..." -- still passed). Names are joined with ", " (comma-space),
+# never a run of 2+ spaces, so this requires one-or-more single-space-
+# separated non-space tokens: real names (including hyphenated or
+# multi-word ones) match; an appended clause preceded by a double space (or
+# any run of 2+ spaces) does not, because a run of 2+ spaces can never be
+# consumed as the single literal space between two `\S+` tokens.
+_UNLABELLED_LINE_RE = re.compile(r"^Unlabelled records: \S+(?: \S+)*$")
 
 
 def report_matches_expected_shape(text: str) -> bool:
@@ -232,11 +249,11 @@ def report_matches_expected_shape(text: str) -> bool:
     if not literal(""):
         return False
 
-    if not matching(_COUNT_LINE_RE):
+    if not matching(_RECORDS_READ_RE):
         return False
-    if not matching(_COUNT_LINE_RE):
+    if not matching(_RECORDS_ACCEPTED_RE):
         return False
-    if not matching(_COUNT_LINE_RE):
+    if not matching(_RECORDS_REJECTED_RE):
         return False
     if not literal(""):
         return False

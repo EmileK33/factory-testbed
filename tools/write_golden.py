@@ -26,7 +26,7 @@ def write_golden(path: str | Path | None = None) -> Path:
     item's review history is a repeated pattern of a bad line landing in
     the report and a single ``python -m tools.write_golden`` run laundering
     it past every test that only compares against the committed artifact
-    (PR #236 review, rounds 2 through 5) -- gating the write itself, not
+    (PR #236 review, rounds 2 through 6) -- gating the write itself, not
     only the comparison afterwards, closes that specific path regardless of
     which test would otherwise have caught it.
     """
@@ -35,8 +35,11 @@ def write_golden(path: str | Path | None = None) -> Path:
         raise RuntimeError(
             "refusing to write artifacts/report.golden.txt: render_report()'s "
             "current output fails src.report.report_matches_expected_shape(). "
-            "Either render_report() regressed, or the expected shape is "
-            "stale and needs a deliberate update alongside this change."
+            "Do not assume which side is wrong -- render_report() may have "
+            "regressed, report_matches_expected_shape() may itself be stale "
+            "or too strict for a legitimate change, or the two may simply "
+            "disagree for a reason neither of those covers. Read the actual "
+            "diff between them before changing either."
         )
     target = Path(path) if path is not None else GOLDEN_PATH
     target.parent.mkdir(parents=True, exist_ok=True)

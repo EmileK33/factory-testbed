@@ -552,20 +552,89 @@ def test_shape_rejects_a_corrupted_net_after_fees_banner():
 
 
 def test_shape_rejects_a_corrupted_net_rule():
+    """PR #236 review round 7, Finding 2/A3: the round-6 version of this
+    fixture searched for the bare substring "--------------\n" (14 dashes
+    then a newline), which also occurs INSIDE the settlement table's own
+    27-dash tags-column rule (the last 14 of its 27 dashes are immediately
+    followed by the line's own newline) -- so `.replace(..., count=1)`
+    silently corrupted the table rule instead of the net rule, leaving c6
+    (the net rule's own _TABLE_RULE_RE check) unpinned while making it look
+    covered. Anchored on the unique preceding context ("Net after fees\\n")
+    so this can only match the net rule's own line."""
     text = render_report()
-    corrupted = text.replace("--------------\n", "--------------X\n", 1)
+    corrupted = text.replace(
+        "Net after fees\n--------------\n",
+        "Net after fees\n--------------X\n",
+        1,
+    )
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
 
 
 def test_shape_rejects_a_corrupted_records_accepted_line():
-    """Same _COUNT_LINE_RE fullmatch that closes P6 on "Records read:"
-    applies identically to "Records accepted:" and "Records rejected:" --
-    demonstrated once more here on a different one of the three lines to
-    show it is not only the first of the three that is enforced."""
+    """Each "Records ..." line now has its own exact regex
+    (_RECORDS_READ_RE / _RECORDS_ACCEPTED_RE / _RECORDS_REJECTED_RE), not
+    one shared pattern applied three times (PR #236 review round 7, Finding
+    2/A2: the shared version validated "a" known label three times, not the
+    three specific labels in order -- "read/read/rejected" and
+    "rejected/accepted/read" both passed it). Demonstrated here on a
+    different one of the three lines to show it is not only the first that
+    is enforced; see test_shape_rejects_the_records_lines_out_of_order and
+    test_shape_rejects_a_repeated_records_label below for the specific
+    label-identity attacks this round found."""
     text = render_report()
     corrupted = text.replace(
         "Records accepted: 5\n", "Records accepted: 5 (verified)\n", 1
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_the_records_lines_out_of_order():
+    """PR #236 review round 7, Finding 2/A2, reproduced directly: with a
+    single shared regex, "Records rejected: 3 / Records accepted: 5 /
+    Records read: 8" (the three real lines, reordered) passed, because the
+    check only verified each line was SOME recognised label, not that it
+    was the SPECIFIC label expected at that position."""
+    text = render_report()
+    corrupted = text.replace(
+        "Records read: 8\nRecords accepted: 5\nRecords rejected: 3\n",
+        "Records rejected: 3\nRecords accepted: 5\nRecords read: 8\n",
+        1,
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_repeated_records_label():
+    """PR #236 review round 7, Finding 2/A2, the other reproduced case:
+    "Records read: 8 / Records read: 8 / Records read: 8" -- three lines
+    that are all individually a recognised label -- passed the shared
+    regex, because nothing distinguished "the read label, three times"
+    from "read, then accepted, then rejected"."""
+    text = render_report()
+    corrupted = text.replace(
+        "Records read: 8\nRecords accepted: 5\nRecords rejected: 3\n",
+        "Records read: 8\nRecords read: 8\nRecords read: 8\n",
+        1,
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_net_row_whose_content_is_replaced_in_place():
+    """PR #236 review round 7, Finding 2: c7 (_NET_ROW_RE) is masked by the
+    round-6 row-count cross-check for INSERTED/DELETED lines (which the
+    cross-check catches via the count mismatch), but not for a net row
+    whose content is REPLACED with something differently-shaped while the
+    total row count stays the same -- only _NET_ROW_RE's own fullmatch
+    catches that. Preserves the row count (one line swapped for one line)
+    so this isolates the shape check specifically."""
+    text = render_report()
+    corrupted = text.replace(
+        "R-1001       995\n",
+        "All 6 reported fields are checked by the validation rules.\n",
+        1,
     )
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
@@ -580,6 +649,45 @@ def test_shape_rejects_a_corrupted_unlabelled_prefix():
     )
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_false_claim_appended_to_unlabelled_records():
+    """PR #236 review round 7, Finding 1/A1 (BLOCKING): round 6's
+    `_UNLABELLED_LINE_RE = r"^Unlabelled records: .+$"` was a `fullmatch`
+    against a wildcard -- the same unconstrained tail `startswith` had,
+    just spelled with `fullmatch` instead. The reviewer's exact reproduction
+    of the original P8 attack (round 6) still shipped, 71/71 effectively
+    green: "Unlabelled records: Fennel Labs  -- all 6 reported fields are
+    checked by the validation rules." Fixed with
+    `\\S+(?: \\S+)*` after the prefix -- one-or-more single-space-separated
+    tokens, which a run of 2+ spaces (the shape every appended clause in
+    this item's history has used) cannot satisfy."""
+    text = render_report()
+    corrupted = text.replace(
+        "Unlabelled records: Fennel Labs\n",
+        "Unlabelled records: Fennel Labs  -- all 6 reported fields are "
+        "checked by the validation rules.\n",
+        1,
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_accepts_an_unlabelled_line_with_several_names():
+    """Accept-direction test for the tightened _UNLABELLED_LINE_RE (PR #236
+    review round 7's own invitation-to-contradict: "if `\\S+(?: \\S+)*`
+    rejects something render_report() can legitimately emit for the
+    unlabelled line, that is the over-correction class again"). Real
+    unlabelled names are joined with ", " (comma-space, a SINGLE space) --
+    never a run of 2+ spaces -- so multiple names, and a hyphenated one,
+    must still pass."""
+    text = render_report(records=[
+        {"name": "Fennel Labs", "amount": 100, "currency": "USD", "region": "NA", "tags": ""},
+        {"name": "Jean-Pierre Holdings", "amount": 200, "currency": "USD", "region": "NA",
+         "tags": ""},
+    ])
+    assert "Unlabelled records: Fennel Labs, Jean-Pierre Holdings" in text
+    assert report_matches_expected_shape(text)
 
 
 def test_shape_rejects_a_corrupted_total_line_shape():
