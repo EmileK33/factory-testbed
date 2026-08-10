@@ -13,7 +13,9 @@ from src.report import (
     _check_list_valued_fields,
     _format,
     _missing,
+    expected_unlabelled_line,
     render_report,
+    rendered_unlabelled_line,
     report_matches_expected_shape,
 )
 from src.validate import _missing as validate_missing
@@ -903,17 +905,30 @@ def test_shape_rejects_a_corrupted_unlabelled_prefix():
     assert not report_matches_expected_shape(corrupted)
 
 
-def test_shape_rejects_a_false_claim_appended_to_unlabelled_records():
-    """PR #236 review round 7, Finding 1/A1 (BLOCKING): round 6's
-    `_UNLABELLED_LINE_RE = r"^Unlabelled records: .+$"` was a `fullmatch`
-    against a wildcard -- the same unconstrained tail `startswith` had,
-    just spelled with `fullmatch` instead. The reviewer's exact reproduction
-    of the original P8 attack (round 6) still shipped, 71/71 effectively
-    green: "Unlabelled records: Fennel Labs  -- all 6 reported fields are
-    checked by the validation rules." Fixed with
-    `\\S+(?: \\S+)*` after the prefix -- one-or-more single-space-separated
-    tokens, which a run of 2+ spaces (the shape every appended clause in
-    this item's history has used) cannot satisfy."""
+def test_shape_no_longer_bounds_the_unlabelled_lines_content_by_pattern():
+    """SUPERSEDES the round-7 test that used to live under this name
+    (`test_shape_rejects_a_false_claim_appended_to_unlabelled_records`),
+    kept here renamed rather than deleted so the history stays attached to
+    the line it is about. Round 7 fixed `_UNLABELLED_LINE_RE` to
+    `\\S+(?: \\S+)*` -- one-or-more single-space-separated tokens -- which
+    caught the double-spaced append below. PR #236 review round 11,
+    Finding 1 proved that pattern was never correct in class, only in the
+    one FORM every attack against this line happened to use: it also
+    refused a legitimate name containing a real run of 2+ spaces
+    ("ACME  Labs"), and it accepted the SAME claim worded without a double
+    space. No pattern closes both directions without reopening the other,
+    because check_record() places no format constraint on `name` at all
+    -- a legitimate name and a forbidden claim can be byte-for-byte the
+    same string. `report_matches_expected_shape()` therefore no longer
+    checks this line's content by pattern (see the block comment above
+    `_TOTAL_LINE_RE` and its own comment inline at the check site), so
+    this SAME double-spaced attack -- once caught here -- is now
+    correctly ACCEPTED by this function alone. It is caught instead by
+    the source-derived check: see
+    test_unlabelled_line_source_check_rejects_the_class_of_attacks_regardless_of_spacing
+    and test_write_golden_refuses_to_write_when_the_unlabelled_line_does_not_match_the_source_feed
+    below, which supersede this test's old assertion with the mechanism
+    that actually closes both directions."""
     text = render_report()
     corrupted = text.replace(
         "Unlabelled records: Fennel Labs\n",
@@ -922,7 +937,7 @@ def test_shape_rejects_a_false_claim_appended_to_unlabelled_records():
         1,
     )
     assert corrupted != text
-    assert not report_matches_expected_shape(corrupted)
+    assert report_matches_expected_shape(corrupted)  # intentionally True now
 
 
 def test_shape_accepts_an_unlabelled_line_with_several_names():
@@ -950,28 +965,34 @@ def test_shape_accepts_an_unlabelled_line_with_an_empty_tail():
     trailing space -- a line shape that predates this PR (the base golden
     already has "Unlabelled records: Fennel Labs"; the renderer's own
     choice to emit an empty name here is out of scope and not touched).
-    Round 7's `\\S+(?: \\S+)*` requires at least one token and refused
-    this, so `report_matches_expected_shape()` -- a check ADDED by this
-    PR -- would have refused output the renderer already produces on a
-    pre-existing, reachable input. Fixed by making the tail's empty case
-    an explicit alternative (the ONLY new string accepted is the empty
-    one), not by widening the pattern -- see
-    test_shape_rejects_a_false_claim_appended_after_an_empty_unlabelled_line
-    below for why an empty tail cannot be used to smuggle a claim the way
-    a wildcard could."""
+    Round 10 fixed this by making the tail's empty case an explicit
+    regex alternative; round 11 review replaced that regex entirely (see
+    `report_matches_expected_shape()`'s own comment at the check site) --
+    the position-only check this test now exercises accepts every tail,
+    empty included, by construction, which is a strict superset of round
+    10's fix. See
+    test_unlabelled_line_source_check_accepts_the_legitimate_class below
+    for the source-derived check's own coverage of this same case."""
     text = render_report(records=[{"id": "", "name": ""}])
     assert "Unlabelled records: \n" in text
     assert report_matches_expected_shape(text)
 
 
-def test_shape_rejects_a_false_claim_appended_after_an_empty_unlabelled_line():
-    """The reject-direction companion to the accept test above: appending a
-    claim after an otherwise-empty "Unlabelled records: " line must still
-    fail. The content after the fixed "Unlabelled records: " prefix
-    becomes " -- all 6 reported fields are checked" (note the leading
-    space from the append itself, making a run of 2+ spaces overall),
-    which matches neither the empty alternative nor the single-space-token
-    alternative."""
+def test_shape_no_longer_bounds_an_appended_claim_after_an_empty_unlabelled_line():
+    """SUPERSEDES the round-10 test that used to live under this name
+    (`test_shape_rejects_a_false_claim_appended_after_an_empty_unlabelled_line`),
+    kept renamed rather than deleted for the same reason as the test
+    directly above test_shape_accepts_an_unlabelled_line_with_several_names:
+    the history stays attached to the line it is about. Round 10's fix
+    made the empty tail an explicit alternative inside a still-pattern-
+    based regex, so appending a claim after the empty tail still failed
+    that pattern. Round 11 review replaced the pattern entirely --
+    `report_matches_expected_shape()` no longer checks this line's
+    content at all (see its own comment at the check site) -- so this
+    SAME append is now correctly ACCEPTED by this function alone. It is
+    caught instead by the source-derived check: see
+    test_unlabelled_line_source_check_rejects_the_class_of_attacks_regardless_of_spacing
+    below."""
     text = render_report(records=[{"id": "", "name": ""}])
     corrupted = text.replace(
         "Unlabelled records: \n",
@@ -980,7 +1001,245 @@ def test_shape_rejects_a_false_claim_appended_after_an_empty_unlabelled_line():
         1,
     )
     assert corrupted != text  # the replacement landed
-    assert not report_matches_expected_shape(corrupted)
+    assert report_matches_expected_shape(corrupted)  # intentionally True now
+
+
+def test_the_rendered_unlabelled_line_matches_the_source_feed_on_the_real_report():
+    """PR #236 review round 11, Finding 1 (BLOCKING): `_UNLABELLED_LINE_RE`
+    (`^Unlabelled records: (?:\\S+(?: \\S+)*)?$`) accepts a claim worded
+    WITHOUT a run of 2+ spaces -- "Fennel Labs all 6 reported fields are
+    checked by the validation rules" fullmatches it, because "one-or-more
+    single-space-separated tokens" is also what an ordinary English
+    sentence is. `report_matches_expected_shape()` is a check on TEXT
+    alone and cannot close this (see its own docstring). The actual
+    closure runs against the SOURCE feed instead: `rendered_unlabelled_line()`
+    recovers whatever line is really in the text; `expected_unlabelled_line()`
+    re-derives what that line must be from `load_records()`'s raw feed,
+    independently of render_report()'s own construction. Deliberately
+    exercises the real, UNMOCKED render_report()/load_records() pipeline
+    (unlike the monkeypatched write_golden() tests below) so that a real
+    source mutation to render_report()'s unlabelled-line construction --
+    appending a claim with or without a double space -- flows through this
+    test and fails it BECAUSE the two values genuinely differ, not because
+    a `.replace()` fixture literal stopped matching."""
+    raw = load_records()
+    text = render_report()
+    assert rendered_unlabelled_line(text) == expected_unlabelled_line(raw)
+
+
+def test_expected_unlabelled_line_matches_render_reports_own_construction():
+    """Drift guard for expected_unlabelled_line()'s deliberate independence
+    from render_report()'s own unlabelled-list construction (see
+    expected_unlabelled_line()'s docstring for why the two are NOT allowed
+    to share a helper -- sharing one would make the write_golden() check
+    an oracle that compares an implementation to itself). Independence
+    trades security for a real maintenance risk: an ordinary, non-
+    adversarial code change to one side's selection logic (which field
+    counts as "missing", the "?" fallback, the join separator) and not
+    the other would silently make write_golden() start refusing legitimate
+    output. This test is the guard against exactly that -- pinning the two
+    against each other, across a sweep of inputs, so an accidental
+    divergence fails a NAMED test in CI rather than surfacing later as a
+    write_golden() refusal on real production output."""
+    feeds = {
+        "no unlabelled records": [
+            {"id": "R-1", "name": "A", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "one unlabelled, plain name": [
+            {"id": None, "name": "Fennel Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "one unlabelled, internal double space": [
+            {"id": None, "name": "ACME  Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "two unlabelled": [
+            {"id": None, "name": "Fennel Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+            {"id": None, "name": "ACME  Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "missing name entirely": [
+            {"id": None, "amount": 1, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+        "empty id and empty name": [
+            {"id": "", "name": "", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "empty feed": [],
+    }
+    for label, raw in feeds.items():
+        text = render_report(records=raw)
+        assert rendered_unlabelled_line(text) == expected_unlabelled_line(raw), (
+            f"expected_unlabelled_line() diverged from render_report()'s own "
+            f"output on {label!r}"
+        )
+
+
+def test_unlabelled_line_source_check_accepts_the_legitimate_class():
+    """Accept-direction sweep for the source-derived unlabelled-line check,
+    run as a class (PR #236 review round 11, Section 1's 8-case accept
+    table) -- every one of these is a legitimate render_report() output
+    the source-comparison check must not refuse."""
+    accept_cases = {
+        "plain unlabelled name": [
+            {"id": None, "name": "Fennel Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "name with two consecutive spaces": [
+            {"id": None, "name": "ACME  Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "name with five consecutive spaces": [
+            {"id": None, "name": "ACME     Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "two unlabelled, one multi-space": [
+            {"id": None, "name": "ACME  Labs", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+            {"id": None, "name": "Beta Co", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "missing name (the '?' fallback)": [
+            {"id": None, "amount": 1, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+        "empty id and empty name": [
+            {"id": "", "name": "", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "no unlabelled records at all": [
+            {"id": "R-1", "name": "A", "amount": 1, "currency": "USD",
+             "region": "NA", "tags": ""},
+        ],
+        "name that reads like a claim": [
+            {"id": None,
+             "name": "all 6 reported fields are checked by the validation rules",
+             "amount": 1, "currency": "USD", "region": "NA", "tags": ""},
+        ],
+    }
+    for label, raw in accept_cases.items():
+        text = render_report(records=raw)
+        assert rendered_unlabelled_line(text) == expected_unlabelled_line(raw), (
+            f"legitimate case {label!r} was refused by the source comparison"
+        )
+
+
+def test_unlabelled_line_source_check_rejects_the_class_of_attacks_regardless_of_spacing():
+    """Reject-direction sweep (PR #236 review round 11, Section 1's 5-case
+    reject table) -- including the case the current `_UNLABELLED_LINE_RE`
+    gets WRONG (a claim worded without a run of 2+ spaces) and two more
+    the regex was never even asked about (comma-joined, prepended). The
+    source comparison must reject all five, unlike the regex, which only
+    ever caught the double-spaced one."""
+    raw = [{"id": None, "name": "Fennel Labs", "amount": 1, "currency": "USD",
+            "region": "NA", "tags": ""}]
+    text = render_report(records=raw)
+    attacks = {
+        "double-spaced claim (the one shape the old regex caught)": (
+            "Unlabelled records: Fennel Labs\n",
+            "Unlabelled records: Fennel Labs  -- all 6 reported fields are "
+            "checked by the validation rules.\n",
+        ),
+        "single-spaced claim (Finding 1 -- the regex accepts this)": (
+            "Unlabelled records: Fennel Labs\n",
+            "Unlabelled records: Fennel Labs all 6 reported fields are "
+            "checked by the validation rules\n",
+        ),
+        "claim appended after a comma": (
+            "Unlabelled records: Fennel Labs\n",
+            "Unlabelled records: Fennel Labs, all 6 fields checked\n",
+        ),
+        "claim prepended before the real name": (
+            "Unlabelled records: Fennel Labs\n",
+            "Unlabelled records: all 6 fields checked, Fennel Labs\n",
+        ),
+    }
+    for label, (needle, replacement) in attacks.items():
+        corrupted = text.replace(needle, replacement, 1)
+        assert corrupted != text, f"{label!r} fixture did not land"
+        assert rendered_unlabelled_line(corrupted) != expected_unlabelled_line(raw), (
+            f"attack {label!r} was NOT detected by the source comparison"
+        )
+
+    # A fifth shape: the attack targets a name that is ALREADY multi-space,
+    # proving the check does not merely fall back to the old regex's
+    # double-space heuristic once a legitimate multi-space name is present.
+    raw_multispace = [{"id": None, "name": "ACME  Labs", "amount": 1,
+                        "currency": "USD", "region": "NA", "tags": ""}]
+    text_multispace = render_report(records=raw_multispace)
+    corrupted = text_multispace.replace(
+        "Unlabelled records: ACME  Labs\n",
+        "Unlabelled records: ACME  Labs  -- all 6 reported fields are "
+        "checked\n",
+        1,
+    )
+    assert corrupted != text_multispace
+    assert rendered_unlabelled_line(corrupted) != expected_unlabelled_line(raw_multispace)
+
+
+def test_write_golden_refuses_to_write_when_the_unlabelled_line_does_not_match_the_source_feed(
+    tmp_path, monkeypatch
+):
+    """End-to-end reject-direction test for tools/write_golden.py's new
+    source-comparison gate (PR #236 review round 11, Section 1's fix).
+    Monkeypatches write_golden_mod.render_report to return a report whose
+    unlabelled line carries a claim worded WITHOUT a run of 2+ spaces --
+    exactly Finding 1's shape, which report_matches_expected_shape() alone
+    (unchanged this round) still accepts -- while write_golden_mod.
+    load_records is left returning the REAL feed, so the new check's
+    comparison genuinely disagrees. Fails BECAUSE
+    expected_unlabelled_line(raw) != rendered_unlabelled_line(rendered)
+    inside write_golden(), not because a fixture literal stopped
+    matching -- the raised RuntimeError's own message is read directly
+    below, not just its type."""
+    import tools.write_golden as write_golden_mod
+
+    real_rendered = render_report()
+    corrupted = real_rendered.replace(
+        "Unlabelled records: Fennel Labs\n",
+        "Unlabelled records: Fennel Labs all 6 reported fields are checked "
+        "by the validation rules\n",
+        1,
+    )
+    assert corrupted != real_rendered
+    # The corrupted text must still pass the EXISTING shape check -- this
+    # isolates the new check specifically, proving it catches what the old
+    # one misses rather than merely restating it.
+    assert report_matches_expected_shape(corrupted)
+
+    monkeypatch.setattr(write_golden_mod, "render_report", lambda records=None: corrupted)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        write_golden_mod.write_golden(tmp_path / "out.txt")
+    assert not (tmp_path / "out.txt").exists()
+
+    message = str(excinfo.value)
+    assert "expected_unlabelled_line" in message
+    assert "rendered:" in message and "expected:" in message
+    assert "Fennel Labs all 6 reported fields are checked" in message  # the actual (wrong) line
+
+
+def test_write_golden_writes_when_a_legitimate_multi_space_name_is_unlabelled(
+    tmp_path, monkeypatch
+):
+    """Accept-direction companion, exercised through write_golden() itself
+    (not just the comparison functions): a legitimate multi-space name --
+    the exact case the old regex refused and this PR's escalation
+    originally reported as unclosable -- must be ACCEPTED and written."""
+    import tools.write_golden as write_golden_mod
+
+    raw = [{"id": None, "name": "ACME  Labs", "amount": 100, "currency": "USD",
+            "region": "NA", "tags": "settled"}]
+    text = render_report(records=raw)
+    assert "Unlabelled records: ACME  Labs" in text
+
+    monkeypatch.setattr(write_golden_mod, "render_report", lambda records=None: text)
+    monkeypatch.setattr(write_golden_mod, "load_records", lambda *a, **k: raw)
+
+    out = write_golden_mod.write_golden(tmp_path / "out.txt")
+    assert out.exists()
+    assert "Unlabelled records: ACME  Labs" in out.read_text(encoding="utf-8")
 
 
 def test_shape_accepts_reports_from_degenerate_feeds():

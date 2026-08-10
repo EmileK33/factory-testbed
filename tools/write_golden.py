@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.report import render_report, report_matches_expected_shape
+from src.records import load_records
+from src.report import (
+    expected_unlabelled_line,
+    render_report,
+    rendered_unlabelled_line,
+    report_matches_expected_shape,
+)
 
 GOLDEN_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "report.golden.txt"
 
@@ -29,6 +35,18 @@ def write_golden(path: str | Path | None = None) -> Path:
     (PR #236 review, rounds 2 through 6) -- gating the write itself, not
     only the comparison afterwards, closes that specific path regardless of
     which test would otherwise have caught it.
+
+    Also refuses to write when the rendered "Unlabelled records: ..." line
+    does not match ``src.report.expected_unlabelled_line()`` computed fresh
+    from ``load_records()``'s raw feed (PR #236 review round 11, Finding 1
+    and its resolution in Section 1): that ONE line's content cannot be
+    bounded by a character pattern over the text at all, because a
+    legitimate name and an appended claim can be exactly the same shape --
+    ``report_matches_expected_shape()`` above is a check on TEXT alone and
+    was never going to close it. This module has something that check does
+    not: the raw feed, via the same ``load_records()`` ``render_report()``
+    itself calls -- so this compares the emitted line against a value
+    re-derived from source data by EXACT equality instead.
     """
     rendered = render_report()
     if not report_matches_expected_shape(rendered):
@@ -41,6 +59,24 @@ def write_golden(path: str | Path | None = None) -> Path:
             "disagree for a reason neither of those covers. Read the actual "
             "diff between them before changing either."
         )
+
+    raw = load_records()
+    expected_line = expected_unlabelled_line(raw)
+    actual_line = rendered_unlabelled_line(rendered)
+    if actual_line != expected_line:
+        raise RuntimeError(
+            "refusing to write artifacts/report.golden.txt: the rendered "
+            "'Unlabelled records: ...' line does not match "
+            "src.report.expected_unlabelled_line(load_records()) by exact "
+            "equality. report_matches_expected_shape() cannot bound this "
+            "one line's CONTENT from the rendered text alone -- see its own "
+            "docstring -- so this checks it against the source feed instead. "
+            "Do not assume which side is wrong -- render_report() may have "
+            "regressed, expected_unlabelled_line() may itself be stale, or "
+            "the two may simply disagree for a reason neither covers. "
+            f"rendered: {actual_line!r} expected: {expected_line!r}."
+        )
+
     target = Path(path) if path is not None else GOLDEN_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8", newline="\n") as handle:

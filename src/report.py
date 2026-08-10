@@ -98,15 +98,21 @@ _COLUMN_GAP_RE = re.compile(r" {2,}")
 #     of 2+ spaces, so a whole sentence spliced in before the numeric tail
 #     still fullmatch'd.
 #   - `^\S+(?: \S+)* {2,}-?\d+$` (round 8's fix, the same single-space-token
-#     shape that correctly closed _UNLABELLED_LINE_RE's equivalent gap) was
-#     ALSO wrong (round 9, Finding 1, BLOCKING): it refuses an id containing
-#     TWO consecutive spaces ("R  1001"), which check_record() still
-#     accepts and render_report() still emits. The single-space-token
-#     principle works for the UNLABELLED line (names are joined with ", ",
-#     a fixed single-space-after-comma format the renderer controls) but
-#     does NOT work here, because the id's own content is free-form and
-#     under no such constraint -- the exact trap the table-row gap-count
-#     check fell into one round earlier, now in a fourth guise.
+#     shape once believed to close the unlabelled line's equivalent gap --
+#     round 11 review proved it never actually did; see the unlabelled
+#     line's own history below `_TOTAL_LINE_RE`) was ALSO wrong (round 9,
+#     Finding 1, BLOCKING): it refuses an id containing TWO consecutive
+#     spaces ("R  1001"), which check_record() still accepts and
+#     render_report() still emits. The single-space-token principle was
+#     BELIEVED to work for the unlabelled line, on the theory that names
+#     are joined with ", " -- a fixed format the renderer controls -- but
+#     round 11 review disproved that too: `", "` bounds the join BETWEEN
+#     names, not the content WITHIN one, and a name is exactly as
+#     free-form as an id. The single-space-token pattern was never sound
+#     on either line; it happened to catch the one attack SHAPE tried
+#     against the unlabelled line before round 11, the same way this
+#     net-row attempt happened to catch the one shape tried before round 9
+#     -- the trap being the same trap, worn twice.
 # No pattern can distinguish a legitimate multi-space id from an inserted
 # claim of the same shape, so this line is no longer pattern-matched at
 # all. It is instead cross-checked against the id already recovered from
@@ -122,32 +128,48 @@ _RECORDS_READ_RE = re.compile(r"^Records read: \d+$")
 _RECORDS_ACCEPTED_RE = re.compile(r"^Records accepted: \d+$")
 _RECORDS_REJECTED_RE = re.compile(r"^Records rejected: \d+$")
 _TOTAL_LINE_RE = re.compile(r"^Total \(USD\): -?\d+\.\d{2}$")
-# `.+` after "Unlabelled records: " (round 6's version) was `fullmatch`
-# against a wildcard -- the same unconstrained tail `startswith` had, just
-# spelled differently (round 7, Finding 1/A1: the P8 attack -- a suffix
-# appended after the real name, "Fennel Labs  -- all 6 reported fields are
-# checked..." -- still passed). Names are joined with ", " (comma-space),
-# never a run of 2+ spaces, so this requires one-or-more single-space-
-# separated non-space tokens: real names (including hyphenated or
-# multi-word ones) match; an appended clause preceded by a double space (or
-# any run of 2+ spaces) does not, because a run of 2+ spaces can never be
-# consumed as the single literal space between two `\S+` tokens.
+# History on the unlabelled line, kept because the mistake it documents is
+# this item's most instructive one: rounds 6 through 10 iterated on a
+# character pattern for this line's CONTENT --
+#   - round 6: `.+` after the prefix -- an unconstrained wildcard, `in`
+#     spelled as `fullmatch` (round 7, Finding 1/A1: a claim appended
+#     after the real name still passed).
+#   - round 7: `\S+(?: \S+)*` -- one-or-more single-space-separated
+#     tokens, on the theory that names are joined with ", " and never
+#     contain a run of 2+ spaces themselves, so a double-spaced append
+#     could never be consumed as the pattern's own single literal space.
+#   - round 10: made the empty tail an explicit alternative (a record
+#     with both id and name empty legitimately emits nothing after the
+#     prefix), without widening what non-empty content the pattern
+#     accepted.
+#   - round 11 review: proved round 7's pattern was never actually
+#     correct in class, only in the one FORM every attack up to round 10
+#     happened to use. "One-or-more single-space-separated tokens" is
+#     also what an ordinary English sentence is -- a claim worded WITHOUT
+#     a run of 2+ spaces ("Fennel Labs all 6 reported fields are checked
+#     by the validation rules") fullmatches it exactly as readily as a
+#     legitimate multi-word name. It also, in the other direction,
+#     refused a REAL name containing a run of 2+ spaces ("ACME  Labs"),
+#     which check_record() never forbids -- so the same regex was
+#     simultaneously too loose (round 11's Finding 1) and too tight
+#     (round 10's original escalation) at once. No replacement pattern
+#     closes both without reopening the other: this function receives
+#     TEXT ONLY, and `name` carries no format constraint at all, so a
+#     legitimate name and a forbidden claim can be byte-for-byte the same
+#     string. No character pattern can separate two identical strings by
+#     origin.
 #
-# The tail is made OPTIONAL, not widened, for one specific reachable case
-# (round 10): a raw record with an empty id AND an empty name contributes
-# `""` to `unlabelled`, so `render_report()` legitimately emits
-# "Unlabelled records: " with NOTHING after the trailing space -- a line
-# that predates this PR (the renderer's own behaviour on that input is out
-# of scope; only the gate refusing output the renderer already produces is
-# this PR's problem). The empty string is the ONLY new thing this accepts:
-# it is not `\S+` (at least one non-space token) and it is not `.+` (at
-# least one character of any kind) -- an empty tail carries no bytes at
-# all, so it cannot carry an appended claim the way a wildcard could. A
-# claim appended after an empty tail ("Unlabelled records:  -- claim",
-# note the double space) still fails: the content after the fixed
-# "Unlabelled records: " prefix is " -- claim", which starts with a space
-# and so matches neither alternative.
-_UNLABELLED_LINE_RE = re.compile(r"^Unlabelled records: (?:\S+(?: \S+)*)?$")
+# So this function no longer tries. Once the "Unlabelled records:" prefix
+# is found, the line is consumed WITHOUT checking its content -- this
+# function's job for that one line is reduced to confirming it occupies
+# exactly the right POSITION (one line, in the right place in the
+# document), which is the one thing about it that text alone genuinely
+# does bound. Content is checked elsewhere, where a stronger invariant
+# than text-shape is actually available: see expected_unlabelled_line()
+# below, which tools/write_golden.py compares against the rendered line
+# by EXACT equality against a value re-derived from the raw feed --
+# closing both directions at once, because it is bounded by the source
+# data itself rather than by a guess at what an attack looks like.
 
 
 def report_matches_expected_shape(text: str) -> bool:
@@ -195,8 +217,10 @@ def report_matches_expected_shape(text: str) -> bool:
       never pattern-matched), followed by two spaces and an optionally-
       signed integer / a blank line / "Records read: N", "Records
       accepted: N", "Records rejected: N", each an exact match, digits
-      only / a blank line / an OPTIONAL "Unlabelled records:
-      <name>[, <name>...]" line / a "Total (USD): <amount>" line, exact
+      only / a blank line / an OPTIONAL "Unlabelled records: ..." line,
+      checked by POSITION only, content unchecked (see the paragraph
+      below and expected_unlabelled_line() for why) / a "Total (USD):
+      <amount>" line, exact
       shape, amount digits only (the amount's VALUE is a wildcard, never
       pinned -- see FROZEN_FOOTER_TAIL's own comment) / exactly
       FROZEN_FOOTER_TAIL, byte-for-byte.
@@ -204,42 +228,75 @@ def report_matches_expected_shape(text: str) -> bool:
     The governing principle for every data-bearing line above (the header,
     the two row sections, the unlabelled line): free-form content cannot be
     bounded by a character pattern at all, because the data can legitimately
-    take exactly the shape the attack does. Measured directly, twice: a
-    table-row name containing a real internal double-space (round 8), and a
-    net-row id containing real DOUBLE spaces, not just one (round 9) --
-    the single-space-token pattern that correctly fixed the unlabelled
-    line one round earlier still assumes the field never contains a run of
-    2+ spaces, which is true for names joined with ", " but not true for an
-    arbitrary feed id. Every check on such a line is instead bounded by
-    something render_report() itself GUARANTEES -- a fixed column width
-    (the table rows), an exact cross-check against a value already
-    recovered from elsewhere in the SAME rendered text via a fixed-width
-    slice rather than a delimiter split (the net rows, cross-checked
-    against the table rows' own id column), the specific single-space-token
-    boundary the renderer's own join actually uses where that boundary
-    really is fixed by construction (the unlabelled line's ", "-joined
-    names), or a count derived from the same source data (the table/net row
-    count cross-check below) -- never by a pattern chosen to match what an
-    attack is expected to look like.
+    take exactly the shape the attack does. Measured directly, three times:
+    a table-row name containing a real internal double-space (round 8), a
+    net-row id containing real DOUBLE spaces, not just one (round 9), and
+    an unlabelled-line name containing a run of 2+ spaces (round 10). The
+    unlabelled line went a step further than the other two (round 11,
+    Finding 1): a single-space-token pattern was believed to close it, on
+    the theory that "," `join()`s names with a fixed single space and a
+    real name never contains a run of 2+ spaces of its own -- both true,
+    and still not enough, because "one-or-more single-space-separated
+    tokens" is also what an ordinary English sentence is. A claim worded
+    WITHOUT a run of 2+ spaces fullmatched that pattern exactly as readily
+    as a legitimate multi-word name; the pattern only ever happened to
+    catch the ONE shape every attack against this line used before round
+    11, never the class. Every OTHER check on a data-bearing line above is
+    bounded by something render_report() itself GUARANTEES -- a fixed
+    column width (the table rows), an exact cross-check against a value
+    already recovered from elsewhere in the SAME rendered text via a
+    fixed-width slice rather than a delimiter split (the net rows, cross-
+    checked against the table rows' own id column), or a count derived
+    from the same source data (the table/net row count cross-check below)
+    -- never by a pattern chosen to match what an attack is expected to
+    look like. The unlabelled line has no such renderer-guaranteed TEXTUAL
+    invariant: `", "` genuinely does bound the join BETWEEN names, but
+    nothing bounds the content WITHIN one, because check_record() places
+    no format constraint on `name` at all -- a legitimate name may be,
+    byte for byte, the same text as a forbidden claim. This function no
+    longer tries to check that line's content at all (see the block
+    comment above `_TOTAL_LINE_RE` for the full history) -- it checks only
+    that the line, if present, sits in the right POSITION, which is the
+    one thing about it text alone genuinely bounds. Content is closed
+    elsewhere, in tools/write_golden.py, which has something this function
+    does not: the raw feed. See expected_unlabelled_line() below for the
+    source-derived check write_golden() runs in addition to this
+    function, and for why it succeeds where every character-pattern
+    candidate on this line failed, in both directions at once.
 
-    What this still does not close, honestly: the settlement table's row
-    count is cross-checked against the net-after-fees table's row count
-    (both are derived from the same `accepted` list, in the same order, so
-    they are ALWAYS equal in real output), but neither table is cross-
-    checked against `Records accepted: N`, which is a printed number, not a
-    re-derived one. A single crafted line that also imitates a plausible
-    settlement record, inserted into BOTH tables with `Records accepted:`
-    adjusted to agree, is internally consistent under every check here --
-    that is the forged-record threat model, adjudicated out of scope for
-    this item (it is false DATA, not a false CLAIM about the data; no
-    per-line shape check can distinguish it, and tests/test_golden.py
-    cannot serve as an independent backstop for it either, since
-    `write_golden()` re-renders the very artifact that test compares
-    against -- a source mutation changes both sides at once).
+    What this still does not close, honestly:
+      - The settlement table's row count is cross-checked against the
+        net-after-fees table's row count (both are derived from the same
+        `accepted` list, in the same order, so they are ALWAYS equal in
+        real output), but neither table is cross-checked against `Records
+        accepted: N`, which is a printed number, not a re-derived one. A
+        single crafted line that also imitates a plausible settlement
+        record, inserted into BOTH tables with `Records accepted:`
+        adjusted to agree, is internally consistent under every check
+        here -- that is the forged-record threat model, adjudicated out
+        of scope for this item (it is false DATA, not a false CLAIM about
+        the data; no per-line shape check can distinguish it, and
+        tests/test_golden.py cannot serve as an independent backstop for
+        it either, since `write_golden()` re-renders the very artifact
+        that test compares against -- a source mutation changes both
+        sides at once).
+      - A settlement-table row whose content is a REPLACEMENT, not an
+        append, with each fragment padded to land exactly on the real
+        column widths (round 11 review, Finding 2: a name-column fragment
+        reading "ALL 6 REPORTED" beside an amount-column fragment reading
+        "ARE OK", etc.) satisfies the width bound, every separator
+        position, and the id cross-check below it, because it is
+        structurally indistinguishable from a real row -- it bounds
+        STRUCTURE, not MEANING, and a forged row built to that structure
+        is the same forged-record threat model as the point above, one
+        column at a time instead of one whole line. Constructing it
+        requires knowing the exact per-column widths, which depend on the
+        feed data actually rendered; not fixed, and not closed here.
 
     Used two ways: tools/write_golden.py refuses to write an artifact that
-    fails this check, and tests/test_report.py pins render_report()'s own
-    output against it the same way.
+    fails this check (and, separately, one that fails the source-derived
+    unlabelled-line check below), and tests/test_report.py pins
+    render_report()'s own output against it the same way.
     """
     lines = text.split("\n")
     if lines and lines[-1] == "":
@@ -408,14 +465,89 @@ def report_matches_expected_shape(text: str) -> bool:
     if not literal(""):
         return False
 
+    # Position only, deliberately -- CONTENT is not, and cannot be, checked
+    # here. See the block comment above this function's definition and the
+    # history above `_RECORDS_READ_RE` for why: no character pattern over
+    # this line's text can distinguish a legitimate multi-space name from
+    # an appended claim, because check_record() places no format
+    # constraint on `name` at all. Real closure is
+    # expected_unlabelled_line(), checked against the raw feed by
+    # tools/write_golden.py, not by this function.
     if not at_end() and lines[pos].startswith("Unlabelled records:"):
-        if not matching(_UNLABELLED_LINE_RE):
-            return False
+        pos += 1
 
     if not matching(_TOTAL_LINE_RE):
         return False
 
     return lines[pos:] == _FROZEN_FOOTER_LINES
+
+
+def expected_unlabelled_line(raw: list[dict]) -> str | None:
+    """The exact "Unlabelled records: ..." line render_report() must emit
+    for *raw*, or None when it must emit no such line at all (nothing in
+    *raw* is missing an id).
+
+    Why this exists, and why report_matches_expected_shape() above cannot
+    do this job itself: that function only ever sees the RENDERED TEXT,
+    and no character pattern over that text can distinguish a legitimate
+    name containing a run of 2+ spaces from an attacker's claim spliced in
+    with the same shape -- check_record() places no format constraint on
+    `name` at all, so a name is legitimately allowed to be any string,
+    including the literal text of a forbidden claim (PR #236 review round
+    11, Finding 1: the one-or-more single-space-token pattern this line
+    was previously checked against accepts a claim worded WITHOUT a run
+    of 2+ spaces -- "Fennel Labs all 6 reported fields are checked by the
+    validation rules" fullmatches it, because that is indistinguishable,
+    from inside the text alone, from an ordinary English name -- which is
+    why report_matches_expected_shape() no longer checks this line's
+    content by pattern at all).
+
+    `tools/write_golden.py` is not limited to the text, though: it already
+    calls `load_records()` to produce the report it is about to write, so
+    it can compare the EMITTED line against a value re-derived from the
+    SAME raw feed by exact equality, rather than by guessing at shape. Any
+    difference -- appended, prepended, reworded, comma-joined differently,
+    single- or double-spaced -- fails the comparison, because there is no
+    wording that survives exact equality against source data the way it
+    can survive a character pattern.
+
+    Deliberately written as its OWN, independent selection over *raw*
+    (`_missing(row.get("id"))`, the `"?"` fallback) rather than calling
+    into render_report()'s internals, or having render_report() call this.
+    Sharing one helper between the two would turn this into an oracle that
+    compares an implementation to itself: a mutation to a SHARED helper
+    would be invisible to both sides at once, which is exactly the trap
+    this item has spent ten rounds getting out of on every other line.
+    Independence is what makes this a genuine cross-check instead of a
+    restatement.
+
+    The residual that independence trades for: a coordinated edit to BOTH
+    this function and render_report()'s own unlabelled-list construction
+    passes undetected -- the same forged-record threat model
+    report_matches_expected_shape() already adjudicates out of scope, for
+    the same reason (no per-line check distinguishes coordinated false
+    data from the truth). Ordinary, UNintentional drift between the two --
+    one changed, the other forgotten, no adversary involved -- is a
+    different risk and is guarded separately: see
+    tests/test_report.py::test_expected_unlabelled_line_matches_render_
+    reports_own_construction, which pins the two against each other
+    directly across a sweep of inputs, so an accidental divergence fails
+    a named test in CI long before it could reach write_golden()'s gate.
+    """
+    names = [row.get("name", "?") for row in raw if _missing(row.get("id"))]
+    return f"Unlabelled records: {', '.join(names)}" if names else None
+
+
+def rendered_unlabelled_line(text: str) -> str | None:
+    """The "Unlabelled records: ..." line actually present in *text*,
+    found by its fixed literal prefix regardless of what content follows
+    it -- the point is to recover whatever is really there, corrupted or
+    not, so it can be compared against expected_unlabelled_line() by exact
+    equality. None if no such line is present."""
+    return next(
+        (line for line in text.splitlines() if line.startswith("Unlabelled records:")),
+        None,
+    )
 
 
 # Deliberately not imported from src.validate. That predicate decides what the
