@@ -80,73 +80,97 @@ _FROZEN_FOOTER_LINES = FROZEN_FOOTER_TAIL.rstrip("\n").split("\n")
 
 _TABLE_RULE_RE = re.compile(r"^[- ]+$")
 _TOP_RULE_RE = re.compile(r"^=+$")
-_NET_ROW_RE = re.compile(r"^\S+ {2,}-?\d+$")
+# Splits the table header on runs of 2+ spaces. Safe here in a way it is NOT
+# safe for a data row: the header's cell content IS the literal field names
+# in REPORTED_FIELDS -- known, fixed, single-word strings with no internal
+# whitespace of their own -- so splitting it can never misfire the way
+# splitting arbitrary data (a name, a joined tag list) can, which is why
+# only the header gets this treatment and table data rows do not.
 _COLUMN_GAP_RE = re.compile(r" {2,}")
-# _table()'s line() joins every cell with "  " (two spaces), so a real
-# settlement-table row has at least this many runs of 2+ spaces -- one per
-# column boundary. A LOWER bound, not an exact count: a cell's own content
-# can legitimately contain a run of 2+ spaces (this item's test suite has
-# twice found that a real risk to plan around, not a hypothetical one), and
-# that only ever ADDS boundary-shaped runs, never removes a real one. An
-# inserted English sentence essentially never contains a run of 2+ spaces,
-# so this rejects that without needing to correctly split a row into its
-# individual cell values -- which is the exact parsing this item backed
-# away from twice already (round 4's abandoned column-count oracle; see
-# PLAN.md).
-_MIN_COLUMN_GAPS = len(REPORTED_FIELDS) - 1
+# The old net-row check, `^\S+ {2,}-?\d+$`, over-corrected (round 6, Finding
+# 3/A3): `\S+` refuses an id containing whitespace, but check_record() never
+# validates id FORMAT, only that it is present, so a raw feed id containing a
+# space is legitimate and render_report() emits it -- a rule that can never
+# say yes on that real input is broken, not conservative. Relaxed to `.+`
+# (any non-empty content, including spaces) before the mandatory "  " and
+# trailing signed integer, which is the one part of a net row's shape
+# `f"{row['id']}  {row['net']:>8}"` that a false claim generally cannot
+# imitate (an inserted sentence does not end in a run of 2+ spaces followed
+# by digits) -- see test_shape_accepts_a_net_row_whose_id_contains_a_space
+# for the accept-direction test this change requires.
+_NET_ROW_RE = re.compile(r"^.+ {2,}-?\d+$")
+_COUNT_LINE_RE = re.compile(r"^Records (?:read|accepted|rejected): \d+$")
+_TOTAL_LINE_RE = re.compile(r"^Total \(USD\): -?\d+\.\d{2}$")
+_UNLABELLED_LINE_RE = re.compile(r"^Unlabelled records: .+$")
 
 
 def report_matches_expected_shape(text: str) -> bool:
     """True if EVERY line of *text* matches one of the shapes
     render_report() can legitimately emit, in the order it emits them --
-    the whole document, not a window at either end.
+    the whole document, not a window at either end, and each line checked
+    for its full content, not only its position or its opening prefix.
 
-    History this replaces: round 3 checked the tail by containment
-    (`in`), which any wording placed before or after it passed. Round 4
-    checked the tail by position (`str.endswith`), which only bounds the
-    END -- a false claim inserted anywhere in the 20+ lines ABOVE the tail
-    (between "Records rejected: N" and the blank line that follows it; or
-    inside the "Net after fees" block) still shipped, 53/53 green, because
-    nothing examined that region at all. Both were "a check whose scope is
-    claimed to be complete" without actually being complete -- this item's
-    own signature defect, reproduced one level up each time the previous
-    instance was fixed. Extending the anchored window a further time does
-    not terminate that sequence; owning the WHOLE document does, because
-    there is no longer an unexamined region for the next attack to use.
+    History this replaces, each round finding the dimension the previous
+    fix left unbounded:
+      - round 3: the tail checked by containment (`in`) -- any wording
+        placed before or after it passed.
+      - round 4: the tail checked by position (`str.endswith`) -- bounds
+        only the END; a claim inserted above it still shipped.
+      - round 5 (this function's first version): every line checked for
+        POSITION, but six of those checks stopped at a prefix or a lower-
+        bound count -- `lines[pos].startswith("Records read: ")` accepts
+        any suffix after the number; a settlement-table row needed only
+        len(REPORTED_FIELDS)-1 runs of 2+ spaces, which ordinary
+        double-spaced prose reaches with no other effort. A false claim
+        appended to "Records read: 8" or spliced into the table as an
+        extra double-spaced line both shipped, 58/58 green, one of them
+        carrying the ORIGINAL round-2 wording ("checked by the validation
+        rules") the very first oracle on this item existed to forbid.
+
+    This version checks POSITION and CONTENT together: every line-shape
+    below is either an exact literal, an exact regex (`fullmatch`, not
+    `startswith`/`in`), or -- for the two data-row sections, where content
+    is genuinely free-form -- a count cross-check that does not depend on
+    any single row's content. A line can no longer pass by being in the
+    right place with the wrong tail.
 
     What this checks, top to bottom -- a single sequential pass, each line
-    consumed exactly once, so no two checks overlap the same line (the
-    overlap between two of round 4's checks was itself a defect: a clause
-    that only ever restates what its neighbour already covers can be
-    deleted with the suite still green, because nothing distinguishes
-    "removed" from "redundant"):
+    consumed exactly once:
 
       "Settlement report" / a rule of "=" / a blank line / a table header
-      starting "id" / a rule of "-"/space / zero or more table data rows,
-      each required to have at least len(REPORTED_FIELDS)-1 runs of 2+
-      spaces (the column-boundary count _table() always produces; see
-      _MIN_COLUMN_GAPS' own comment for why this is a lower bound, not an
-      exact split, and why that keeps it robust rather than fragile) / a
-      blank line / "Net after fees" / a rule of "-" / zero or more net
-      rows, each matching an id, 2+ spaces, an optionally-signed integer /
-      a blank line / "Records read: N" / "Records accepted: N" / "Records
-      rejected: N" / a blank line / an OPTIONAL "Unlabelled records: ..."
-      line / a "Total (USD): <amount>" line (the amount is a wildcard,
-      never pinned -- see FROZEN_FOOTER_TAIL's own comment) / exactly
-      FROZEN_FOOTER_TAIL, byte-for-byte.
+      that splits (on runs of 2+ spaces) into exactly REPORTED_FIELDS, in
+      order / a rule of "-"/space / zero or more table data rows (content
+      not shape-validated per row -- see below) / a blank line / "Net
+      after fees" / a rule of "-" / zero or more net rows, each matching
+      free-form content, 2+ spaces, then an optionally-signed integer / a
+      blank line / "Records read: N", "Records accepted: N", "Records
+      rejected: N", each an exact match, digits only / a blank line / an
+      OPTIONAL "Unlabelled records: <non-empty>" line / a "Total (USD):
+      <amount>" line, exact shape, amount digits only (the amount's VALUE
+      is a wildcard, never pinned -- see FROZEN_FOOTER_TAIL's own comment)
+      / exactly FROZEN_FOOTER_TAIL, byte-for-byte.
 
-    What this deliberately does NOT check: table rows are recognised by
-    their column-boundary COUNT, not by extracting or validating individual
-    cell VALUES -- this function never splits a row into fields. That
-    stops it from needing the same whitespace-splitting logic this item's
-    test suite has twice found ambiguous once a cell's own content (a name,
-    a joined tag list) can itself contain a run of 2+ spaces -- exactly the
-    fragility class an earlier round of this item deliberately backed away
-    from. A row's actual field-by-field content is still covered,
-    independently, by tests/test_golden.py's byte-for-byte comparison
-    against the committed artifact, by
-    test_report_binds_tags_to_the_owning_record_row, and by
-    test_report_header_includes_tags_column.
+    What this deliberately does NOT check, and why that is not the same
+    gap round 5 shipped: table data rows are not validated per row, because
+    real cell content (a name, a joined tag list) can legitimately contain
+    whitespace shapes that make any per-row regex either reject legitimate
+    data or accept crafted prose -- the exact trap _NET_ROW_RE's own id
+    clause fell into above. Instead, the number of table data rows is
+    required to equal the number of net-after-fees rows (checked further
+    down, once both counts are known): render_report() derives both from
+    the same `accepted` list, in the same order, so they are ALWAYS equal
+    in real output, and an inserted extra line in either section breaks
+    that equality without needing to know what a legitimate row looks like.
+    A row's actual field-by-field content is still covered, independently,
+    by tests/test_golden.py's byte-for-byte comparison against the
+    committed artifact, by test_report_binds_tags_to_the_owning_record_row,
+    and by test_report_header_includes_tags_column. This does not close
+    every attack shape (a single crafted line that also imitates a
+    plausible settlement record, with the surrounding counts adjusted to
+    match, is a materially different and harder forgery -- out of scope
+    for what a per-line shape check can address at all), but it closes the
+    one demonstrated this round: an inserted line that is not accompanied
+    by a matching, consistent change to the sibling table.
 
     Used two ways: tools/write_golden.py refuses to write an artifact that
     fails this check, and tests/test_report.py pins render_report()'s own
@@ -168,13 +192,6 @@ def report_matches_expected_shape(text: str) -> bool:
         pos += 1
         return True
 
-    def prefixed(prefix: str) -> bool:
-        nonlocal pos
-        if at_end() or not lines[pos].startswith(prefix):
-            return False
-        pos += 1
-        return True
-
     def matching(pattern: re.Pattern) -> bool:
         nonlocal pos
         if at_end() or not pattern.fullmatch(lines[pos]):
@@ -189,14 +206,14 @@ def report_matches_expected_shape(text: str) -> bool:
     if not literal(""):
         return False
 
-    if at_end() or not lines[pos].startswith("id"):
+    if at_end() or _COLUMN_GAP_RE.split(lines[pos]) != list(REPORTED_FIELDS):
         return False
     pos += 1
     if not matching(_TABLE_RULE_RE):
         return False
+    table_row_count = 0
     while not at_end() and lines[pos] != "":
-        if len(_COLUMN_GAP_RE.findall(lines[pos])) < _MIN_COLUMN_GAPS:
-            return False
+        table_row_count += 1
         pos += 1
     if not literal(""):
         return False
@@ -205,25 +222,30 @@ def report_matches_expected_shape(text: str) -> bool:
         return False
     if not matching(_TABLE_RULE_RE):
         return False
+    net_row_count = 0
     while not at_end() and lines[pos] != "":
         if not matching(_NET_ROW_RE):
             return False
-    if not literal(""):
-        return False
-
-    if not prefixed("Records read: "):
-        return False
-    if not prefixed("Records accepted: "):
-        return False
-    if not prefixed("Records rejected: "):
+        net_row_count += 1
+    if table_row_count != net_row_count:
         return False
     if not literal(""):
         return False
 
-    if not at_end() and lines[pos].startswith("Unlabelled records: "):
-        pos += 1
+    if not matching(_COUNT_LINE_RE):
+        return False
+    if not matching(_COUNT_LINE_RE):
+        return False
+    if not matching(_COUNT_LINE_RE):
+        return False
+    if not literal(""):
+        return False
 
-    if not prefixed("Total (USD): "):
+    if not at_end() and lines[pos].startswith("Unlabelled records:"):
+        if not matching(_UNLABELLED_LINE_RE):
+            return False
+
+    if not matching(_TOTAL_LINE_RE):
         return False
 
     return lines[pos:] == _FROZEN_FOOTER_LINES

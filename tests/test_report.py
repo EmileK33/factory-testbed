@@ -421,10 +421,185 @@ def test_shape_rejects_a_report_with_no_total_line_at_all():
     exactly once, non-overlapping with any other clause, so this is what
     pins it: a Total line removed entirely (not displaced, actually
     deleted) must fail, independent of whether render_report() itself can
-    currently produce that state."""
+    currently produce that state.
+
+    PR #236 review round 6, Finding "A4"/LOW: the total's actual VALUE is
+    derived from the live text rather than hard-coded, so this fixture does
+    not itself reintroduce the data-coupling FROZEN_FOOTER_TAIL deliberately
+    removed -- it would not have fired spuriously on a legitimate total
+    change (round 4's concern) or been mistaken for a real detection on an
+    unrelated mutation (round 6's P7, which the hard-coded version was).
+    """
     text = render_report()
-    corrupted = text.replace("Total (USD): 4595.66\n", "", 1)
+    total_line = next(line for line in text.splitlines() if line.startswith("Total (USD): "))
+    corrupted = text.replace(total_line + "\n", "", 1)
     assert corrupted != text  # the removal landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_false_claim_appended_to_records_read():
+    """PR #236 review round 6, Finding 1/P6 (BLOCKING): round 5's checks for
+    the three "Records ..." lines used `startswith`, so anything could
+    follow the number on the same line. The reviewer's reproduction shipped
+    the ORIGINAL round-2 wording ("checked by the validation rules") on
+    this exact line, in the committed artifact, 58/58 green. Fixed with an
+    exact `fullmatch` shape (`^Records (?:read|accepted|rejected): \\d+$`)
+    instead of a prefix check."""
+    text = render_report()
+    corrupted = text.replace(
+        "Records read: 8\n",
+        "Records read: 8  -- all 6 reported fields are checked by the "
+        "validation rules.\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_crafted_double_spaced_row_among_the_table_data():
+    """PR #236 review round 6, Finding 1/P5 (BLOCKING) -- the builder's own
+    self-flagged weak point, confirmed real by the reviewer: the round-5
+    column-gap-count check (>= len(REPORTED_FIELDS)-1 runs of 2+ spaces)
+    could be satisfied by nothing more than double-spacing an inserted
+    sentence -- "NOTE:  all  6  reported  fields  are  checked  by  the
+    validation  rules" has 10 such runs against a threshold of 5. Fixed by
+    dropping per-row content validation entirely in favour of a count
+    cross-check: the settlement table and the Net after fees table are
+    both derived from the same `accepted` list in render_report(), so they
+    always have the same number of data rows in real output, and an
+    inserted extra line in either one breaks that equality regardless of
+    its own spacing."""
+    text = render_report()
+    corrupted = text.replace(
+        "R-1005  Eiger Metals    EU        2750  USD       eu, crossborder\n",
+        "R-1005  Eiger Metals    EU        2750  USD       eu, crossborder\n"
+        "NOTE:  all  6  reported  fields  are  checked  by  the  "
+        "validation  rules\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_accepts_a_net_row_whose_id_contains_a_space():
+    """PR #236 review round 6, Finding 3/A3 (the item's first over-
+    correction): the original _NET_ROW_RE (`^\\S+ {2,}-?\\d+$`) refused an
+    id containing whitespace, but check_record() never validates id
+    FORMAT -- only that it is present -- so a raw feed id containing a
+    space is legitimate, render_report() emits it, and the old regex made
+    write_golden() refuse a genuinely correct artifact. Every round before
+    this one tested only that the gate REJECTS bad input; this is the
+    first test that it still ACCEPTS good input. _NET_ROW_RE now allows
+    arbitrary content before the mandatory "  " + signed-integer tail."""
+    text = render_report(records=[
+        {"id": "R 1001", "name": "Spacey", "amount": 100, "currency": "USD",
+         "region": "NA", "tags": "settled"},
+    ])
+    assert "R 1001        70" in text  # the net row rendered with the id intact
+    assert report_matches_expected_shape(text)
+
+
+# PR #236 review round 6, Finding 2/A2 (MEDIUM): every fixture up to this
+# point in the file INSERTS or DELETES a whole line, which the pass catches
+# downstream regardless of which specific clause "should" have caught it --
+# so deleting most individual clauses (proven directly, one at a time, with
+# the clause's own `pos += 1` preserved so the pass does not merely
+# desynchronise) left the suite green: 8 of 11 clauses were unobserved, not
+# merely non-overlapping. Each test below corrupts ONE line IN PLACE --
+# same line count, same position -- so it can only be caught by the clause
+# that owns that specific line's content.
+def test_shape_rejects_a_corrupted_banner_line():
+    text = render_report()
+    corrupted = text.replace("Settlement report\n", "Settlement Report\n", 1)
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_top_rule():
+    text = render_report()
+    corrupted = text.replace("=================\n", "====X============\n", 1)
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_table_header():
+    text = render_report()
+    corrupted = text.replace(
+        "id      name            region  amount  currency  tags\n",
+        "id      name            region  amount  currency  refs\n",
+        1,
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_table_rule():
+    text = render_report()
+    corrupted = text.replace(
+        "------  --------------  ------  ------  --------  ---------------------------\n",
+        "-X----  --------------  ------  ------  --------  ---------------------------\n",
+        1,
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_net_after_fees_banner():
+    text = render_report()
+    corrupted = text.replace("Net after fees\n", "Net After Fees\n", 1)
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_net_rule():
+    text = render_report()
+    corrupted = text.replace("--------------\n", "--------------X\n", 1)
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_records_accepted_line():
+    """Same _COUNT_LINE_RE fullmatch that closes P6 on "Records read:"
+    applies identically to "Records accepted:" and "Records rejected:" --
+    demonstrated once more here on a different one of the three lines to
+    show it is not only the first of the three that is enforced."""
+    text = render_report()
+    corrupted = text.replace(
+        "Records accepted: 5\n", "Records accepted: 5 (verified)\n", 1
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_unlabelled_prefix():
+    text = render_report()
+    corrupted = text.replace(
+        "Unlabelled records: Fennel Labs\n",
+        "Unlabeled records: Fennel Labs\n",  # typo'd prefix
+        1,
+    )
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_total_line_shape():
+    """Distinct from test_shape_rejects_a_report_with_no_total_line_at_all
+    (which deletes the line): this corrupts the line'S SHAPE in place --
+    still present, still starts with the right prefix, but not a bare
+    signed decimal -- proving _TOTAL_LINE_RE's fullmatch, not merely the
+    line's presence."""
+    text = render_report()
+    corrupted = text.replace("Total (USD): 4595.66\n", "Total (USD): TBD\n", 1)
+    assert corrupted != text
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_corrupted_frozen_tail_line():
+    text = render_report()
+    corrupted = text.replace(
+        "Amounts are shown in USD.\n", "Amounts are shown in USD!\n", 1
+    )
+    assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
 
 
