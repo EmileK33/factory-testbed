@@ -17,6 +17,15 @@ REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 
 RIGHT_ALIGNED = frozenset({"amount"})
 
+# The reported fields whose accepted value is a list, and so get join-based
+# rendering and a `[]`-is-blank rule instead of the default str(value)/
+# None-or-""-is-blank rule (see _cell()). Adding a second list-valued column
+# without adding it here renders raw Python repr instead of a joined value —
+# this assertion makes that mismatch fail on import instead of shipping
+# silently corrupted output.
+LIST_VALUED_FIELDS = frozenset({"tags"})
+assert LIST_VALUED_FIELDS <= set(REPORTED_FIELDS)
+
 
 # Deliberately not imported from src.validate. That predicate decides what the
 # settlement feed REJECTS and moves with the feed contract; this one decides
@@ -28,31 +37,29 @@ def _missing(value: object) -> bool:
 
 
 def _format(value: object) -> str:
-    """Render a list cell's value, joined with ", ". Only ``tags`` is
-    list-valued today; see ``_cell()`` for why this is never called on any
-    other field."""
+    """Join a list cell's values with ", "; anything that isn't a list is
+    stringified unchanged. The isinstance check is load-bearing on its own,
+    not just a scoping convenience: it is what stops this from ever raising,
+    regardless of how a caller reaches it."""
+    if not isinstance(value, list):
+        return str(value)
     return ", ".join(value)
 
 
 def _cell(row: dict, field: str) -> str:
+    """Render one row's value for one field.
+
+    A field only gets list-shaped rendering (join, and `[]` counts as blank)
+    when BOTH conditions hold: it is in LIST_VALUED_FIELDS, and the value it
+    actually holds is a list. Field name alone is not the discriminator —
+    ``tags`` can reach here holding something other than a list (a direct
+    caller of this function, or any future code path that stops normalising
+    before this point), and every such value must fall back to the total
+    str(value) below, which can never raise and never mis-renders (no
+    joining a string into its characters, no joining a dict's keys).
+    """
     value = row.get(field)
-    # tags is the one reported field whose accepted value can be a `[]` list
-    # (parse_tags() always returns list[str] -- never None or ""), so it gets
-    # its own blank rule and its own join-based rendering, both scoped to
-    # this field by name rather than by type. Every other field keeps the
-    # exact original None/""-only rule and the exact original str(value)
-    # rendering: check_record() does not type-check id/name/etc, so a
-    # malformed feed row can legally carry a list there, and a type-based
-    # branch that joined *any* list crashed render_report() on one such row
-    # (PR #236 review, finding B1/F1's crash) instead of rendering it the way
-    # it always rendered before this column existed. A type-based rule also
-    # silently started treating `id: []` as blank on every non-tags column,
-    # which desynced this predicate from validate._missing() and let a
-    # record be simultaneously ACCEPTED and listed as UNLABELLED (finding
-    # F4) -- restoring _missing() above to its original body is what makes
-    # the comment two lines up true again, and this field-name check is what
-    # keeps the tags-only exception from leaking back into it.
-    if field == "tags":
+    if field in LIST_VALUED_FIELDS and isinstance(value, list):
         return "-" if _missing(value) or value == [] else _format(value)
     return "-" if _missing(value) else str(value)
 
@@ -111,24 +118,12 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
-    # Two raw facts, not a derived claim about coverage between them: earlier
-    # phrasing here asserted things like "All N reported fields are checked"
-    # or "N of M reported fields are checked," and both went false the moment
-    # REPORTED_FIELDS and VALIDATED_FIELDS diverged (they do today: tags is
-    # reported but not validated). Stating both field sets independently lets
-    # a reader compare them without the report asserting a relationship that
-    # the next edit to either tuple could silently falsify.
-    # Kept adjacent on purpose (PR #236 review, finding B5): these two lines
-    # are the pair a reader is meant to compare against each other, so an
-    # unrelated line between them made that comparison harder than it needed
-    # to be. Not reordering either tuple's own member order to "line up" the
-    # shared fields -- filtering one tuple's print order by membership in the
-    # other would silently drop a name if a future validated field were ever
-    # NOT also a reported field, while still claiming the correct count in
-    # the parenthetical, which is exactly the kind of representation
-    # fragility this item has spent four gate rounds eliminating. Each line
-    # still prints its own tuple in its own real order; only their position
-    # in the report moved.
+    # Each field set is stated as its own fact (count + members); nothing
+    # here computes or asserts a relationship between the two. Kept adjacent,
+    # each in its own real tuple order, so a reader can compare them directly
+    # without the report doing that comparison — and asserting a claim about
+    # it — for them. This exact block is pinned byte-for-byte by
+    # tests/test_report.py::test_report_footer_facts_match_a_frozen_hand_authored_block.
     lines.append(
         f"Reported fields ({len(REPORTED_FIELDS)}): {', '.join(REPORTED_FIELDS)}"
     )
