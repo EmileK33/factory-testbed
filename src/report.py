@@ -6,6 +6,8 @@ byte-for-byte by ``tests/test_golden.py``.
 
 from __future__ import annotations
 
+import re
+
 from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
@@ -57,59 +59,174 @@ def _check_list_valued_fields() -> None:
         )
 
 
-# Hand-authored, frozen expectation for the fixed TAIL of the emitted report.
-# Deliberately starts at "Amounts are shown in USD." rather than at
-# "Total (USD): ..." -- the total is data-dependent (it moves with the feed
-# and the exchange rates) and embedding its current value here would make
-# every legitimate total change refuse the writer gate below, training
-# whoever hits that refusal to edit this "frozen" literal routinely to make
-# it go away, which disarms the gate and the oracle in the same edit (see
-# PLAN.md's Superseded section). Not derived from REPORTED_FIELDS or
-# VALIDATED_FIELDS either, so it cannot be defeated by editing those tuples.
-#
-# On its own, `text.endswith(FROZEN_FOOTER_TAIL)` only bounds the report on
-# the END side -- it says nothing about what may sit ABOVE the frozen
-# region, which is exactly where a false claim can still be inserted (see
-# footer_matches_frozen_expectation() below, which bounds both sides).
+# Hand-authored, frozen expectation for the fixed TAIL of the emitted report
+# -- the four lines report_matches_expected_shape() below requires to match
+# byte-for-byte, in order, once the body ahead of them checks out. Starts at
+# "Amounts are shown in USD." rather than at "Total (USD): ..." -- the total
+# is data-dependent (it moves with the feed and the exchange rates) and
+# embedding its current value here would make every legitimate total change
+# refuse the writer gate below, training whoever hits that refusal to edit
+# this "frozen" literal routinely to make it go away, which disarms the gate
+# and the oracle in the same edit (see PLAN.md's Superseded section). Not
+# derived from REPORTED_FIELDS or VALIDATED_FIELDS either, so it cannot be
+# defeated by editing those tuples.
 FROZEN_FOOTER_TAIL = (
     "Amounts are shown in USD.\n"
     "Reported fields (6): id, name, region, amount, currency, tags\n"
     "Validated fields (5): id, name, amount, currency, region\n"
     "Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY\n"
 )
+_FROZEN_FOOTER_LINES = FROZEN_FOOTER_TAIL.rstrip("\n").split("\n")
+
+_TABLE_RULE_RE = re.compile(r"^[- ]+$")
+_TOP_RULE_RE = re.compile(r"^=+$")
+_NET_ROW_RE = re.compile(r"^\S+ {2,}-?\d+$")
+_COLUMN_GAP_RE = re.compile(r" {2,}")
+# _table()'s line() joins every cell with "  " (two spaces), so a real
+# settlement-table row has at least this many runs of 2+ spaces -- one per
+# column boundary. A LOWER bound, not an exact count: a cell's own content
+# can legitimately contain a run of 2+ spaces (this item's test suite has
+# twice found that a real risk to plan around, not a hypothetical one), and
+# that only ever ADDS boundary-shaped runs, never removes a real one. An
+# inserted English sentence essentially never contains a run of 2+ spaces,
+# so this rejects that without needing to correctly split a row into its
+# individual cell values -- which is the exact parsing this item backed
+# away from twice already (round 4's abandoned column-count oracle; see
+# PLAN.md).
+_MIN_COLUMN_GAPS = len(REPORTED_FIELDS) - 1
 
 
-def footer_matches_frozen_expectation(text: str) -> bool:
-    """True if *text*'s tail matches FROZEN_FOOTER_TAIL AND the region
-    directly above it holds only what render_report() can legitimately put
-    there -- bounded on BOTH sides, not only the end.
+def report_matches_expected_shape(text: str) -> bool:
+    """True if EVERY line of *text* matches one of the shapes
+    render_report() can legitimately emit, in the order it emits them --
+    the whole document, not a window at either end.
 
-    `endswith` alone owns everything after its anchor and nothing before it;
-    a false claim inserted directly above the anchor passes an end-only
-    check untouched. This additionally requires the single line immediately
-    preceding FROZEN_FOOTER_TAIL to be exactly a "Total (USD): <amount>"
-    line -- the amount itself is a wildcard, its value is not pinned, only
-    that the line exists in that exact position, which render_report()
-    guarantees unconditionally on every call -- and the line above THAT to
-    be either blank or "Unlabelled records: ..." (the only two things
-    render_report() can put there, depending on whether any raw record is
-    missing an id). Nothing else may occupy either position.
+    History this replaces: round 3 checked the tail by containment
+    (`in`), which any wording placed before or after it passed. Round 4
+    checked the tail by position (`str.endswith`), which only bounds the
+    END -- a false claim inserted anywhere in the 20+ lines ABOVE the tail
+    (between "Records rejected: N" and the blank line that follows it; or
+    inside the "Net after fees" block) still shipped, 53/53 green, because
+    nothing examined that region at all. Both were "a check whose scope is
+    claimed to be complete" without actually being complete -- this item's
+    own signature defect, reproduced one level up each time the previous
+    instance was fixed. Extending the anchored window a further time does
+    not terminate that sequence; owning the WHOLE document does, because
+    there is no longer an unexamined region for the next attack to use.
+
+    What this checks, top to bottom -- a single sequential pass, each line
+    consumed exactly once, so no two checks overlap the same line (the
+    overlap between two of round 4's checks was itself a defect: a clause
+    that only ever restates what its neighbour already covers can be
+    deleted with the suite still green, because nothing distinguishes
+    "removed" from "redundant"):
+
+      "Settlement report" / a rule of "=" / a blank line / a table header
+      starting "id" / a rule of "-"/space / zero or more table data rows,
+      each required to have at least len(REPORTED_FIELDS)-1 runs of 2+
+      spaces (the column-boundary count _table() always produces; see
+      _MIN_COLUMN_GAPS' own comment for why this is a lower bound, not an
+      exact split, and why that keeps it robust rather than fragile) / a
+      blank line / "Net after fees" / a rule of "-" / zero or more net
+      rows, each matching an id, 2+ spaces, an optionally-signed integer /
+      a blank line / "Records read: N" / "Records accepted: N" / "Records
+      rejected: N" / a blank line / an OPTIONAL "Unlabelled records: ..."
+      line / a "Total (USD): <amount>" line (the amount is a wildcard,
+      never pinned -- see FROZEN_FOOTER_TAIL's own comment) / exactly
+      FROZEN_FOOTER_TAIL, byte-for-byte.
+
+    What this deliberately does NOT check: table rows are recognised by
+    their column-boundary COUNT, not by extracting or validating individual
+    cell VALUES -- this function never splits a row into fields. That
+    stops it from needing the same whitespace-splitting logic this item's
+    test suite has twice found ambiguous once a cell's own content (a name,
+    a joined tag list) can itself contain a run of 2+ spaces -- exactly the
+    fragility class an earlier round of this item deliberately backed away
+    from. A row's actual field-by-field content is still covered,
+    independently, by tests/test_golden.py's byte-for-byte comparison
+    against the committed artifact, by
+    test_report_binds_tags_to_the_owning_record_row, and by
+    test_report_header_includes_tags_column.
 
     Used two ways: tools/write_golden.py refuses to write an artifact that
     fails this check, and tests/test_report.py pins render_report()'s own
     output against it the same way.
     """
-    if not text.endswith(FROZEN_FOOTER_TAIL):
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]  # text ends with "\n"; drop the trailing split
+    pos = 0
+    n = len(lines)
+
+    def at_end() -> bool:
+        return pos >= n
+
+    def literal(expected: str) -> bool:
+        nonlocal pos
+        if at_end() or lines[pos] != expected:
+            return False
+        pos += 1
+        return True
+
+    def prefixed(prefix: str) -> bool:
+        nonlocal pos
+        if at_end() or not lines[pos].startswith(prefix):
+            return False
+        pos += 1
+        return True
+
+    def matching(pattern: re.Pattern) -> bool:
+        nonlocal pos
+        if at_end() or not pattern.fullmatch(lines[pos]):
+            return False
+        pos += 1
+        return True
+
+    if not literal("Settlement report"):
         return False
-    before_tail = text[: -len(FROZEN_FOOTER_TAIL)]
-    lines_above = before_tail.split("\n")
-    if lines_above and lines_above[-1] == "":
-        lines_above = lines_above[:-1]  # split("\n") on a "...X\n" trailer
-    if not lines_above or not lines_above[-1].startswith("Total (USD): "):
+    if not matching(_TOP_RULE_RE):
         return False
-    lines_above = lines_above[:-1]
-    prev = lines_above[-1] if lines_above else ""
-    return prev == "" or prev.startswith("Unlabelled records: ")
+    if not literal(""):
+        return False
+
+    if at_end() or not lines[pos].startswith("id"):
+        return False
+    pos += 1
+    if not matching(_TABLE_RULE_RE):
+        return False
+    while not at_end() and lines[pos] != "":
+        if len(_COLUMN_GAP_RE.findall(lines[pos])) < _MIN_COLUMN_GAPS:
+            return False
+        pos += 1
+    if not literal(""):
+        return False
+
+    if not literal("Net after fees"):
+        return False
+    if not matching(_TABLE_RULE_RE):
+        return False
+    while not at_end() and lines[pos] != "":
+        if not matching(_NET_ROW_RE):
+            return False
+    if not literal(""):
+        return False
+
+    if not prefixed("Records read: "):
+        return False
+    if not prefixed("Records accepted: "):
+        return False
+    if not prefixed("Records rejected: "):
+        return False
+    if not literal(""):
+        return False
+
+    if not at_end() and lines[pos].startswith("Unlabelled records: "):
+        pos += 1
+
+    if not prefixed("Total (USD): "):
+        return False
+
+    return lines[pos:] == _FROZEN_FOOTER_LINES
 
 
 # Deliberately not imported from src.validate. That predicate decides what the
@@ -211,12 +328,10 @@ def render_report(records: list[dict] | None = None) -> str:
     # Each field set is stated as its own fact (count + members); nothing
     # here computes or asserts a relationship between the two. Kept adjacent,
     # each in its own real tuple order, so a reader can compare them
-    # directly without the report doing that comparison for them. From here
-    # to the end of the report must keep matching FROZEN_FOOTER_TAIL above,
-    # and the "Total (USD): ..." line just appended, plus whatever is above
-    # THAT, must keep matching what footer_matches_frozen_expectation()
-    # allows there -- both `tools/write_golden.py` (refuses to write
-    # otherwise) and tests/test_report.py check the whole thing.
+    # directly without the report doing that comparison for them. This
+    # entire function's output -- not only this tail -- must keep matching
+    # report_matches_expected_shape() above; both `tools/write_golden.py`
+    # (refuses to write otherwise) and tests/test_report.py check it.
     lines.append(
         f"Reported fields ({len(REPORTED_FIELDS)}): {', '.join(REPORTED_FIELDS)}"
     )

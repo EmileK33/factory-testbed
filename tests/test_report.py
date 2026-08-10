@@ -13,8 +13,8 @@ from src.report import (
     _check_list_valued_fields,
     _format,
     _missing,
-    footer_matches_frozen_expectation,
     render_report,
+    report_matches_expected_shape,
 )
 from src.validate import _missing as validate_missing
 from src.validate import check_record
@@ -267,44 +267,51 @@ def test_report_states_the_current_reported_and_validated_field_lists():
     assert set(REPORTED_FIELDS) != set(validate.VALIDATED_FIELDS)
 
 
-def test_report_footer_facts_match_a_frozen_hand_authored_block():
-    """PR #236 review round 3, Finding 1: round 2's version of this test used
-    `_FROZEN_FOOTER_FACTS in text` -- substring containment, proving the
-    block present *somewhere*, not *where*. Round 3 fixed the append-after
-    and insert-immediately-above attacks with `str.endswith`.
+def test_report_matches_its_expected_shape():
+    """PR #236 review, five rounds of the same underlying finding, each at a
+    wider scope than the last:
 
-    Round 4, Finding 1 (BLOCKING): `endswith` only bounds the END of the
-    report -- it owns everything after its anchor and nothing before it. A
-    false claim inserted directly ABOVE the anchor (between
-    "Unlabelled records: ..." and "Total (USD): ...") left FROZEN_FOOTER_TAIL
-    byte-identical and this assertion still held, 49/49 green, even after
-    `python -m tools.write_golden`. `str.endswith` alone cannot fix this --
-    there is always a line above whatever it is anchored to. Fixed by
-    bounding BOTH sides: footer_matches_frozen_expectation() (src/report.py)
-    additionally requires the line directly above FROZEN_FOOTER_TAIL to be
-    exactly a "Total (USD): <amount>" line (wildcarding only the amount,
-    never pinning its actual value -- see FROZEN_FOOTER_TAIL's own comment
-    for why), and the line above THAT to be blank or "Unlabelled
-    records: ..." -- the only two things render_report() can legitimately
-    put there. See the three mutation tests below (append, insert-above-tail,
-    insert-above-total) for each position closed.
+    - round 2: the footer test used `_FROZEN_FOOTER_FACTS in text` --
+      containment, proving the block present *somewhere*, not *where*.
+    - round 3: `str.endswith` fixed containment but only bounds the END --
+      a claim inserted directly ABOVE the anchor still shipped, 49/49 green.
+    - round 4: bounding two more lines above the anchor closed THAT position
+      -- but a claim inserted further up still shipped, 53/53 green, in
+      TWO more positions: between "Records rejected: N" and the blank line
+      that follows it, and inside the "Net after fees" block (the second
+      one shipping the ORIGINAL round-2 wording, "checked by the validation
+      rules", the exact sentence this item's very first oracle existed to
+      forbid). Anchoring a wider window each round does not terminate --
+      there is always a line above wherever the window starts.
+
+    report_matches_expected_shape() ends that sequence by owning the WHOLE
+    document: every line, from "Settlement report" to the final
+    "Settlement pairs in force: ..." line, must match one of the shapes
+    render_report() can legitimately emit, in the order it emits them.
+    There is no remaining region an inserted line can occupy undetected
+    except the settlement table's own data rows, which this function
+    deliberately leaves unvalidated in detail (see its own docstring for
+    why) because that content is independently covered elsewhere,
+    byte-for-byte, by tests/test_golden.py.
+
+    See the mutation tests below for each of the five demonstrated
+    insertion/appension positions across all five rounds, each closed by
+    name.
     """
-    assert footer_matches_frozen_expectation(render_report())
+    assert report_matches_expected_shape(render_report())
 
 
-def test_footer_predicate_rejects_a_false_claim_appended_after_the_tail():
-    """Mutation-proof, not just a mutation-testing script: constructs the
-    exact shape of PR #236 review round 3's Variant 1 attack directly (a
-    line appended after the frozen tail) and asserts the predicate rejects
-    it, independent of running `verify.py mutate` against the source."""
+def test_shape_rejects_a_false_claim_appended_after_the_report():
+    """Round 3's Variant 1: a line appended after everything render_report()
+    emits."""
     corrupted = render_report() + "Coverage: all reported fields are covered.\n"
-    assert not footer_matches_frozen_expectation(corrupted)
+    assert not report_matches_expected_shape(corrupted)
 
 
-def test_footer_predicate_rejects_a_false_claim_inserted_above_the_tail():
-    """Round 3's Variant 2 attack: a line inserted between "Amounts are
-    shown in USD." and the "Reported fields" line, i.e. inside
-    FROZEN_FOOTER_TAIL's own region."""
+def test_shape_rejects_a_false_claim_inserted_inside_the_frozen_tail():
+    """Round 3's Variant 2: a line inserted between "Amounts are shown in
+    USD." and the "Reported fields" line, i.e. inside FROZEN_FOOTER_TAIL's
+    own region."""
     text = render_report()
     corrupted = text.replace(
         "Amounts are shown in USD.\n",
@@ -312,16 +319,14 @@ def test_footer_predicate_rejects_a_false_claim_inserted_above_the_tail():
         "All 6 reported fields are checked by the settlement rules.\n",
     )
     assert corrupted != text  # the replacement landed
-    assert not footer_matches_frozen_expectation(corrupted)
+    assert not report_matches_expected_shape(corrupted)
 
 
-def test_footer_predicate_rejects_a_false_claim_inserted_above_the_total():
-    """Round 4's Variant 3 attack, the one that defeated the round-3 fix: a
-    line inserted between "Records rejected: N" / "Unlabelled records: ..."
-    and "Total (USD): ...", i.e. entirely ABOVE FROZEN_FOOTER_TAIL's own
-    region, where a suffix-only check has no opinion at all. This is the
-    case footer_matches_frozen_expectation() exists to close that
-    `str.endswith(FROZEN_FOOTER_TAIL)` alone could not."""
+def test_shape_rejects_a_false_claim_inserted_above_the_total():
+    """Round 4's Variant 3, the one that defeated round 3's `endswith` fix:
+    a line inserted between "Records rejected: N" / "Unlabelled
+    records: ..." and "Total (USD): ...", entirely above where round 4's
+    predicate started looking."""
     text = render_report()
     corrupted = text.replace(
         "Total (USD): ",
@@ -330,20 +335,110 @@ def test_footer_predicate_rejects_a_false_claim_inserted_above_the_total():
         1,
     )
     assert corrupted != text  # the replacement landed
-    assert not footer_matches_frozen_expectation(corrupted)
+    assert not report_matches_expected_shape(corrupted)
 
 
-def test_write_golden_refuses_to_write_when_the_frozen_footer_is_violated(
+def test_shape_rejects_a_false_claim_inserted_after_records_rejected():
+    """Round 5's Position A, the one that defeated round 4's fix: a line
+    inserted between "Records rejected: N" and the blank line that follows
+    it -- above even round 4's own extended window."""
+    text = render_report()
+    corrupted = text.replace(
+        "Records rejected: 3\n",
+        "Records rejected: 3\n"
+        "Coverage: 5/6 reported fields are validated; all reported fields "
+        "are covered.\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_false_claim_inserted_inside_net_after_fees():
+    """Round 5's Position B: a line inserted directly after the "Net after
+    fees" separator, before the first net row. Ships the ORIGINAL round-2
+    wording ("checked by the validation rules") in the reviewer's own
+    reproduction -- the exact sentence this item's first oracle existed to
+    forbid, reinstated three representation changes later."""
+    text = render_report()
+    corrupted = text.replace(
+        "Net after fees\n--------------\n",
+        "Net after fees\n--------------\n"
+        "All 6 reported fields are checked by the validation rules.\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_false_claim_inserted_between_the_header_and_rule():
+    """Invented position, not one either reviewer demonstrated: a line
+    inserted between the settlement table's header row and its rule-of-
+    dashes row. Closed the same way the header/rule sequence always was --
+    the rule row must match only "-"/space, which a sentence does not."""
+    text = render_report()
+    corrupted = text.replace(
+        "id      name            region  amount  currency  tags\n",
+        "id      name            region  amount  currency  tags\n"
+        "All 6 reported fields are checked by the validation rules.\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_false_claim_inserted_among_the_table_data_rows():
+    """A line inserted among the settlement table's own data rows (after
+    the last real row, before the blank line that ends the table) --
+    initially left unvalidated in this function's first draft this round
+    (any non-blank line was accepted as "a row"), since a per-row regex
+    that extracts individual cell VALUES would need the same
+    whitespace-splitting logic this item's test suite has twice found
+    ambiguous. Closed without reintroducing that: real rows always have at
+    least len(REPORTED_FIELDS)-1 runs of 2+ spaces (the column-boundary
+    count _table() always produces), and an inserted English sentence
+    essentially never does -- a boundary COUNT, not a value SPLIT."""
+    text = render_report()
+    corrupted = text.replace(
+        "R-1005  Eiger Metals    EU        2750  USD       eu, crossborder\n",
+        "R-1005  Eiger Metals    EU        2750  USD       eu, crossborder\n"
+        "All 6 reported fields are checked by the validation rules.\n",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_shape_rejects_a_report_with_no_total_line_at_all():
+    """PR #236 review round 5, Finding 2 (MEDIUM): round 4's predicate had
+    two clauses that overlapped -- the "line above the tail must start with
+    Total (USD): " clause and the "line above THAT must be blank or
+    Unlabelled" clause covered the same ground for every insertion
+    position, so deleting the Total clause alone still passed 53/53 (its
+    one distinct effect, rejecting a report with no Total line, is
+    unreachable through render_report(), which always emits one). This
+    function's single sequential pass checks the "Total (USD): " line
+    exactly once, non-overlapping with any other clause, so this is what
+    pins it: a Total line removed entirely (not displaced, actually
+    deleted) must fail, independent of whether render_report() itself can
+    currently produce that state."""
+    text = render_report()
+    corrupted = text.replace("Total (USD): 4595.66\n", "", 1)
+    assert corrupted != text  # the removal landed
+    assert not report_matches_expected_shape(corrupted)
+
+
+def test_write_golden_refuses_to_write_when_the_expected_shape_is_violated(
     tmp_path, monkeypatch
 ):
     """PR #236 review round 3, item 2 (coordinator-directed structural fix):
-    every surviving false-claim mutation across rounds 2 through 4 needed
+    every surviving false-claim mutation across rounds 2 through 5 needed
     exactly one `python -m tools.write_golden` run to go quiet against
     tests/test_golden.py, because that test only ever compares against
     whatever was last regenerated. Gating the regeneration step itself on
-    footer_matches_frozen_expectation() closes that path structurally: a
-    render that would violate it is never written to disk in the first
-    place, regardless of which (if any) test would otherwise have caught it.
+    report_matches_expected_shape() closes that path structurally: a render
+    that would violate it is never written to disk in the first place,
+    regardless of which (if any) test would otherwise have caught it.
     """
     import tools.write_golden as write_golden_mod
 
