@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.report import FROZEN_FOOTER_TAIL, render_report
+from src.report import footer_matches_frozen_expectation, render_report
 
 GOLDEN_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "report.golden.txt"
 
@@ -20,20 +20,21 @@ def write_golden(path: str | Path | None = None) -> Path:
     The newline is pinned so the artifact is byte-identical on every platform;
     ``tests/test_golden.py`` compares bytes, not lines.
 
-    Refuses to write when the freshly rendered text does not end with
-    ``src.report.FROZEN_FOOTER_TAIL``. This item's review history is a
-    repeated pattern of a bad line landing in the report and a single
-    ``python -m tools.write_golden`` run laundering it past every test that
-    only compares against the committed artifact (PR #236 review, rounds
-    2 and 3) -- gating the write itself, not only the comparison afterwards,
-    closes that specific path regardless of which test would otherwise have
-    caught it.
+    Refuses to write when the freshly rendered text fails
+    ``src.report.footer_matches_frozen_expectation()`` -- bounded on both
+    sides, not just checked for a known-bad substring or a suffix match.
+    This item's review history is a repeated pattern of a bad line landing
+    in the report and a single ``python -m tools.write_golden`` run
+    laundering it past every test that only compares against the committed
+    artifact (PR #236 review, rounds 2 through 4) -- gating the write
+    itself, not only the comparison afterwards, closes that specific path
+    regardless of which test would otherwise have caught it.
     """
     rendered = render_report()
-    if not rendered.endswith(FROZEN_FOOTER_TAIL):
+    if not footer_matches_frozen_expectation(rendered):
         raise RuntimeError(
             "refusing to write artifacts/report.golden.txt: render_report()'s "
-            "current output does not end with src.report.FROZEN_FOOTER_TAIL. "
+            "current output fails src.report.footer_matches_frozen_expectation(). "
             "Either render_report() regressed, or FROZEN_FOOTER_TAIL is "
             "stale and needs a deliberate update alongside this change."
         )

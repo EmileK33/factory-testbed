@@ -30,34 +30,86 @@ RIGHT_ALIGNED = frozenset({"amount"})
 # detected from these two tuples' shapes alone (neither carries type
 # information); it is checked against real data instead by
 # tests/test_report.py::test_every_actually_reported_list_value_is_declared_list_valued.
-# An explicit raise, not a bare `assert`, so this survives `python -O`
-# (a bare assert is compiled out entirely under -O and the module would
-# import silently in the state this exists to forbid).
 LIST_VALUED_FIELDS = frozenset({"tags"})
-if not LIST_VALUED_FIELDS <= set(REPORTED_FIELDS):
-    raise ValueError(
-        f"LIST_VALUED_FIELDS {sorted(LIST_VALUED_FIELDS)} contains a field "
-        f"not in REPORTED_FIELDS {REPORTED_FIELDS} -- remove the stale name."
-    )
 
-# Hand-authored, frozen expectation for the END of the emitted report --
-# not derived from REPORTED_FIELDS or VALIDATED_FIELDS, so it cannot be
-# defeated by editing either tuple, and anchored by position (checked with
-# str.endswith, never `in`) rather than mere containment, so it cannot be
-# defeated by adding, removing, or rewording a line before or after it --
-# see PR #236 review rounds 2 and 3 for why both properties are required.
-# Used two ways: tools/write_golden.py refuses to write an artifact whose
-# freshly rendered text does not end with this, and
-# tests/test_report.py pins render_report()'s own output against it the
-# same way. Update it deliberately, alongside a real change to the report's
-# tail, the same way artifacts/report.golden.txt is updated deliberately.
+
+def _check_list_valued_fields() -> None:
+    """Raise if LIST_VALUED_FIELDS references a name that has drifted out of
+    REPORTED_FIELDS. An explicit raise, not a bare `assert`, so it survives
+    `python -O` (a bare assert is compiled out entirely under -O).
+
+    Called from render_report() below, NOT at import time. A module-level
+    raise here would fire the instant anything imports src.report -- which
+    every test file that touches reporting does -- so a single mutated
+    constant turned into a pytest COLLECTION error: 0 named test failures,
+    0 tests executed, the invariant's own pinning test
+    (test_list_valued_fields_is_pinned_and_a_subset_of_reported_fields)
+    included, since collecting its file is what raised. Calling this from
+    render_report() instead means a violation surfaces as an ordinary
+    exception inside whichever test happens to call render_report() --
+    a normal FAILED line, in the column CI actually reads -- while every
+    other test in the suite still collects and runs.
+    """
+    if not LIST_VALUED_FIELDS <= set(REPORTED_FIELDS):
+        raise ValueError(
+            f"LIST_VALUED_FIELDS {sorted(LIST_VALUED_FIELDS)} contains a field "
+            f"not in REPORTED_FIELDS {REPORTED_FIELDS} -- remove the stale name."
+        )
+
+
+# Hand-authored, frozen expectation for the fixed TAIL of the emitted report.
+# Deliberately starts at "Amounts are shown in USD." rather than at
+# "Total (USD): ..." -- the total is data-dependent (it moves with the feed
+# and the exchange rates) and embedding its current value here would make
+# every legitimate total change refuse the writer gate below, training
+# whoever hits that refusal to edit this "frozen" literal routinely to make
+# it go away, which disarms the gate and the oracle in the same edit (see
+# PLAN.md's Superseded section). Not derived from REPORTED_FIELDS or
+# VALIDATED_FIELDS either, so it cannot be defeated by editing those tuples.
+#
+# On its own, `text.endswith(FROZEN_FOOTER_TAIL)` only bounds the report on
+# the END side -- it says nothing about what may sit ABOVE the frozen
+# region, which is exactly where a false claim can still be inserted (see
+# footer_matches_frozen_expectation() below, which bounds both sides).
 FROZEN_FOOTER_TAIL = (
-    "Total (USD): 4595.66\n"
     "Amounts are shown in USD.\n"
     "Reported fields (6): id, name, region, amount, currency, tags\n"
     "Validated fields (5): id, name, amount, currency, region\n"
     "Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY\n"
 )
+
+
+def footer_matches_frozen_expectation(text: str) -> bool:
+    """True if *text*'s tail matches FROZEN_FOOTER_TAIL AND the region
+    directly above it holds only what render_report() can legitimately put
+    there -- bounded on BOTH sides, not only the end.
+
+    `endswith` alone owns everything after its anchor and nothing before it;
+    a false claim inserted directly above the anchor passes an end-only
+    check untouched. This additionally requires the single line immediately
+    preceding FROZEN_FOOTER_TAIL to be exactly a "Total (USD): <amount>"
+    line -- the amount itself is a wildcard, its value is not pinned, only
+    that the line exists in that exact position, which render_report()
+    guarantees unconditionally on every call -- and the line above THAT to
+    be either blank or "Unlabelled records: ..." (the only two things
+    render_report() can put there, depending on whether any raw record is
+    missing an id). Nothing else may occupy either position.
+
+    Used two ways: tools/write_golden.py refuses to write an artifact that
+    fails this check, and tests/test_report.py pins render_report()'s own
+    output against it the same way.
+    """
+    if not text.endswith(FROZEN_FOOTER_TAIL):
+        return False
+    before_tail = text[: -len(FROZEN_FOOTER_TAIL)]
+    lines_above = before_tail.split("\n")
+    if lines_above and lines_above[-1] == "":
+        lines_above = lines_above[:-1]  # split("\n") on a "...X\n" trailer
+    if not lines_above or not lines_above[-1].startswith("Total (USD): "):
+        return False
+    lines_above = lines_above[:-1]
+    prev = lines_above[-1] if lines_above else ""
+    return prev == "" or prev.startswith("Unlabelled records: ")
 
 
 # Deliberately not imported from src.validate. That predicate decides what the
@@ -127,6 +179,7 @@ def _money(cents: int) -> str:
 
 def render_report(records: list[dict] | None = None) -> str:
     """Return the settlement report for *records* (defaults to the live feed)."""
+    _check_list_valued_fields()
     raw = load_records() if records is None else records
 
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
@@ -159,9 +212,11 @@ def render_report(records: list[dict] | None = None) -> str:
     # here computes or asserts a relationship between the two. Kept adjacent,
     # each in its own real tuple order, so a reader can compare them
     # directly without the report doing that comparison for them. From here
-    # to the end of the report must keep matching FROZEN_FOOTER_TAIL above
-    # exactly -- both `tools/write_golden.py` (refuses to write otherwise)
-    # and tests/test_report.py pin it.
+    # to the end of the report must keep matching FROZEN_FOOTER_TAIL above,
+    # and the "Total (USD): ..." line just appended, plus whatever is above
+    # THAT, must keep matching what footer_matches_frozen_expectation()
+    # allows there -- both `tools/write_golden.py` (refuses to write
+    # otherwise) and tests/test_report.py check the whole thing.
     lines.append(
         f"Reported fields ({len(REPORTED_FIELDS)}): {', '.join(REPORTED_FIELDS)}"
     )

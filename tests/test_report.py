@@ -7,12 +7,13 @@ import pytest
 from src import validate
 from src.records import load_records
 from src.report import (
-    FROZEN_FOOTER_TAIL,
     LIST_VALUED_FIELDS,
     REPORTED_FIELDS,
     _cell,
+    _check_list_valued_fields,
     _format,
     _missing,
+    footer_matches_frozen_expectation,
     render_report,
 )
 from src.validate import _missing as validate_missing
@@ -107,17 +108,43 @@ def test_report_and_validate_missing_still_agree():
 
 
 def test_list_valued_fields_is_pinned_and_a_subset_of_reported_fields():
-    """Pins today's exact LIST_VALUED_FIELDS value, and the one direction the
-    module-level guard in src/report.py genuinely checks: a name declared
-    here that has drifted out of REPORTED_FIELDS (dead config -- harmless,
-    since an unreported field is never rendered). This does NOT, on its own,
-    catch a REPORTED field whose real value turns out to be list-shaped
-    without being declared here (PR #236 review round 3, Finding 3 --
-    growing REPORTED_FIELDS leaves this subset relation true and this test
-    green). That direction is checked separately, against real data, by
+    """Pins today's exact LIST_VALUED_FIELDS value, and the one direction
+    _check_list_valued_fields() genuinely checks: a name declared here that
+    has drifted out of REPORTED_FIELDS (dead config -- harmless, since an
+    unreported field is never rendered). This does NOT, on its own, catch a
+    REPORTED field whose real value turns out to be list-shaped without
+    being declared here (PR #236 review round 3, Finding 3 -- growing
+    REPORTED_FIELDS leaves this subset relation true and this test green).
+    That direction is checked separately, against real data, by
     test_every_actually_reported_list_value_is_declared_list_valued below."""
     assert LIST_VALUED_FIELDS == frozenset({"tags"})
     assert LIST_VALUED_FIELDS <= set(REPORTED_FIELDS)
+    _check_list_valued_fields()  # must not raise on today's real values
+
+
+def test_check_list_valued_fields_raises_as_a_named_test_failure_not_a_collect_error(
+    monkeypatch,
+):
+    """PR #236 review round 4, Finding 2 (MEDIUM): the invariant used to live
+    in a module-level `raise` in src/report.py, executed the instant
+    anything imported the module -- including every test file that touches
+    reporting. A violated invariant therefore surfaced as a pytest
+    COLLECTION error (0 named failures, 0 tests executed, 23 of 49 tests
+    never even collected), not as a failing test, which is the one column a
+    CI summary actually reads. Moving the check into
+    _check_list_valued_fields() and calling it from render_report() instead
+    of at import time means: the module always imports cleanly regardless
+    of LIST_VALUED_FIELDS's value, and a violation raises INSIDE a normal
+    test function's body -- this one -- producing an ordinary FAILED line
+    with a traceback, while every other test in the suite still collects
+    and runs. Monkeypatches the real constant (not the source file) so this
+    proves the runtime behaviour without needing a subprocess or a second
+    mutated copy of the module."""
+    import src.report as report_mod
+
+    monkeypatch.setattr(report_mod, "LIST_VALUED_FIELDS", frozenset({"tags", "refs"}))
+    with pytest.raises(ValueError, match="LIST_VALUED_FIELDS"):
+        report_mod._check_list_valued_fields()
 
 
 def test_every_actually_reported_list_value_is_declared_list_valued():
@@ -241,34 +268,83 @@ def test_report_states_the_current_reported_and_validated_field_lists():
 
 
 def test_report_footer_facts_match_a_frozen_hand_authored_block():
-    """PR #236 review round 3, Finding 1 (BLOCKING): round 2's version of
-    this test used `_FROZEN_FOOTER_FACTS in text` -- substring containment,
-    which proves the block is present *somewhere*, not *where*. A reworded
-    false derived claim appended after the block, or inserted between
-    "Amounts are shown in USD." and the block, left the block byte-identical
-    and this assertion still held, even after `python -m tools.write_golden`.
-    Fixed two ways: (1) `str.endswith`, not `in` -- constrains the block to
-    be the literal end of the report, so nothing can be appended after it;
-    (2) FROZEN_FOOTER_TAIL (in src/report.py, shared with
-    tools/write_golden.py's own gate -- see the test below) now starts from
-    "Total (USD): ..." rather than "Reported fields...", so there is no
-    unowned line left between an earlier anchor this test already owns and
-    the fields it cares about for an insertion to hide in.
+    """PR #236 review round 3, Finding 1: round 2's version of this test used
+    `_FROZEN_FOOTER_FACTS in text` -- substring containment, proving the
+    block present *somewhere*, not *where*. Round 3 fixed the append-after
+    and insert-immediately-above attacks with `str.endswith`.
+
+    Round 4, Finding 1 (BLOCKING): `endswith` only bounds the END of the
+    report -- it owns everything after its anchor and nothing before it. A
+    false claim inserted directly ABOVE the anchor (between
+    "Unlabelled records: ..." and "Total (USD): ...") left FROZEN_FOOTER_TAIL
+    byte-identical and this assertion still held, 49/49 green, even after
+    `python -m tools.write_golden`. `str.endswith` alone cannot fix this --
+    there is always a line above whatever it is anchored to. Fixed by
+    bounding BOTH sides: footer_matches_frozen_expectation() (src/report.py)
+    additionally requires the line directly above FROZEN_FOOTER_TAIL to be
+    exactly a "Total (USD): <amount>" line (wildcarding only the amount,
+    never pinning its actual value -- see FROZEN_FOOTER_TAIL's own comment
+    for why), and the line above THAT to be blank or "Unlabelled
+    records: ..." -- the only two things render_report() can legitimately
+    put there. See the three mutation tests below (append, insert-above-tail,
+    insert-above-total) for each position closed.
     """
-    assert render_report().endswith(FROZEN_FOOTER_TAIL)
+    assert footer_matches_frozen_expectation(render_report())
+
+
+def test_footer_predicate_rejects_a_false_claim_appended_after_the_tail():
+    """Mutation-proof, not just a mutation-testing script: constructs the
+    exact shape of PR #236 review round 3's Variant 1 attack directly (a
+    line appended after the frozen tail) and asserts the predicate rejects
+    it, independent of running `verify.py mutate` against the source."""
+    corrupted = render_report() + "Coverage: all reported fields are covered.\n"
+    assert not footer_matches_frozen_expectation(corrupted)
+
+
+def test_footer_predicate_rejects_a_false_claim_inserted_above_the_tail():
+    """Round 3's Variant 2 attack: a line inserted between "Amounts are
+    shown in USD." and the "Reported fields" line, i.e. inside
+    FROZEN_FOOTER_TAIL's own region."""
+    text = render_report()
+    corrupted = text.replace(
+        "Amounts are shown in USD.\n",
+        "Amounts are shown in USD.\n"
+        "All 6 reported fields are checked by the settlement rules.\n",
+    )
+    assert corrupted != text  # the replacement landed
+    assert not footer_matches_frozen_expectation(corrupted)
+
+
+def test_footer_predicate_rejects_a_false_claim_inserted_above_the_total():
+    """Round 4's Variant 3 attack, the one that defeated the round-3 fix: a
+    line inserted between "Records rejected: N" / "Unlabelled records: ..."
+    and "Total (USD): ...", i.e. entirely ABOVE FROZEN_FOOTER_TAIL's own
+    region, where a suffix-only check has no opinion at all. This is the
+    case footer_matches_frozen_expectation() exists to close that
+    `str.endswith(FROZEN_FOOTER_TAIL)` alone could not."""
+    text = render_report()
+    corrupted = text.replace(
+        "Total (USD): ",
+        "Coverage: 5/6 reported fields are validated; all reported fields "
+        "are covered.\nTotal (USD): ",
+        1,
+    )
+    assert corrupted != text  # the replacement landed
+    assert not footer_matches_frozen_expectation(corrupted)
 
 
 def test_write_golden_refuses_to_write_when_the_frozen_footer_is_violated(
     tmp_path, monkeypatch
 ):
     """PR #236 review round 3, item 2 (coordinator-directed structural fix):
-    every surviving false-claim mutation across rounds 2 and 3 needed
+    every surviving false-claim mutation across rounds 2 through 4 needed
     exactly one `python -m tools.write_golden` run to go quiet against
     tests/test_golden.py, because that test only ever compares against
     whatever was last regenerated. Gating the regeneration step itself on
-    FROZEN_FOOTER_TAIL closes that path structurally: a render that would
-    violate the frozen tail is never written to disk in the first place,
-    regardless of which (if any) test would otherwise have caught it."""
+    footer_matches_frozen_expectation() closes that path structurally: a
+    render that would violate it is never written to disk in the first
+    place, regardless of which (if any) test would otherwise have caught it.
+    """
     import tools.write_golden as write_golden_mod
 
     monkeypatch.setattr(
