@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.report import render_report
+from src.report import FROZEN_FOOTER_TAIL, render_report
 
 GOLDEN_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "report.golden.txt"
 
@@ -19,11 +19,28 @@ def write_golden(path: str | Path | None = None) -> Path:
 
     The newline is pinned so the artifact is byte-identical on every platform;
     ``tests/test_golden.py`` compares bytes, not lines.
+
+    Refuses to write when the freshly rendered text does not end with
+    ``src.report.FROZEN_FOOTER_TAIL``. This item's review history is a
+    repeated pattern of a bad line landing in the report and a single
+    ``python -m tools.write_golden`` run laundering it past every test that
+    only compares against the committed artifact (PR #236 review, rounds
+    2 and 3) -- gating the write itself, not only the comparison afterwards,
+    closes that specific path regardless of which test would otherwise have
+    caught it.
     """
+    rendered = render_report()
+    if not rendered.endswith(FROZEN_FOOTER_TAIL):
+        raise RuntimeError(
+            "refusing to write artifacts/report.golden.txt: render_report()'s "
+            "current output does not end with src.report.FROZEN_FOOTER_TAIL. "
+            "Either render_report() regressed, or FROZEN_FOOTER_TAIL is "
+            "stale and needs a deliberate update alongside this change."
+        )
     target = Path(path) if path is not None else GOLDEN_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(render_report())
+        handle.write(rendered)
     return target
 
 

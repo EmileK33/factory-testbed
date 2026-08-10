@@ -19,12 +19,45 @@ RIGHT_ALIGNED = frozenset({"amount"})
 
 # The reported fields whose accepted value is a list, and so get join-based
 # rendering and a `[]`-is-blank rule instead of the default str(value)/
-# None-or-""-is-blank rule (see _cell()). Adding a second list-valued column
-# without adding it here renders raw Python repr instead of a joined value —
-# this assertion makes that mismatch fail on import instead of shipping
-# silently corrupted output.
+# None-or-""-is-blank rule (see _cell()).
+#
+# This check only catches ONE direction: a name in LIST_VALUED_FIELDS that
+# is no longer in REPORTED_FIELDS (dead/stale config -- harmless, since a
+# field not in REPORTED_FIELDS is never rendered at all). It does NOT catch
+# the dangerous direction -- a field in REPORTED_FIELDS whose real accepted
+# value turns out to be a list without being declared here, which renders
+# raw Python repr instead of a joined value. That direction cannot be
+# detected from these two tuples' shapes alone (neither carries type
+# information); it is checked against real data instead by
+# tests/test_report.py::test_every_actually_reported_list_value_is_declared_list_valued.
+# An explicit raise, not a bare `assert`, so this survives `python -O`
+# (a bare assert is compiled out entirely under -O and the module would
+# import silently in the state this exists to forbid).
 LIST_VALUED_FIELDS = frozenset({"tags"})
-assert LIST_VALUED_FIELDS <= set(REPORTED_FIELDS)
+if not LIST_VALUED_FIELDS <= set(REPORTED_FIELDS):
+    raise ValueError(
+        f"LIST_VALUED_FIELDS {sorted(LIST_VALUED_FIELDS)} contains a field "
+        f"not in REPORTED_FIELDS {REPORTED_FIELDS} -- remove the stale name."
+    )
+
+# Hand-authored, frozen expectation for the END of the emitted report --
+# not derived from REPORTED_FIELDS or VALIDATED_FIELDS, so it cannot be
+# defeated by editing either tuple, and anchored by position (checked with
+# str.endswith, never `in`) rather than mere containment, so it cannot be
+# defeated by adding, removing, or rewording a line before or after it --
+# see PR #236 review rounds 2 and 3 for why both properties are required.
+# Used two ways: tools/write_golden.py refuses to write an artifact whose
+# freshly rendered text does not end with this, and
+# tests/test_report.py pins render_report()'s own output against it the
+# same way. Update it deliberately, alongside a real change to the report's
+# tail, the same way artifacts/report.golden.txt is updated deliberately.
+FROZEN_FOOTER_TAIL = (
+    "Total (USD): 4595.66\n"
+    "Amounts are shown in USD.\n"
+    "Reported fields (6): id, name, region, amount, currency, tags\n"
+    "Validated fields (5): id, name, amount, currency, region\n"
+    "Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY\n"
+)
 
 
 # Deliberately not imported from src.validate. That predicate decides what the
@@ -38,9 +71,13 @@ def _missing(value: object) -> bool:
 
 def _format(value: object) -> str:
     """Join a list cell's values with ", "; anything that isn't a list is
-    stringified unchanged. The isinstance check is load-bearing on its own,
-    not just a scoping convenience: it is what stops this from ever raising,
-    regardless of how a caller reaches it."""
+    stringified unchanged via str(value), which cannot raise. That covers
+    every non-list input, but NOT every list: a list whose elements are not
+    all strings can still raise on the join itself (``_format([1, 2])``
+    does). Unreached through render_report() today -- check_record() only
+    ever produces a list-valued cell via parse_tags(), which always returns
+    list[str] -- but this guard does not claim to cover that case, only the
+    non-list one."""
     if not isinstance(value, list):
         return str(value)
     return ", ".join(value)
@@ -120,10 +157,11 @@ def render_report(records: list[dict] | None = None) -> str:
     lines.append("Amounts are shown in USD.")
     # Each field set is stated as its own fact (count + members); nothing
     # here computes or asserts a relationship between the two. Kept adjacent,
-    # each in its own real tuple order, so a reader can compare them directly
-    # without the report doing that comparison — and asserting a claim about
-    # it — for them. This exact block is pinned byte-for-byte by
-    # tests/test_report.py::test_report_footer_facts_match_a_frozen_hand_authored_block.
+    # each in its own real tuple order, so a reader can compare them
+    # directly without the report doing that comparison for them. From here
+    # to the end of the report must keep matching FROZEN_FOOTER_TAIL above
+    # exactly -- both `tools/write_golden.py` (refuses to write otherwise)
+    # and tests/test_report.py pin it.
     lines.append(
         f"Reported fields ({len(REPORTED_FIELDS)}): {', '.join(REPORTED_FIELDS)}"
     )
