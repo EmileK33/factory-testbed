@@ -25,5 +25,5 @@ Unlabelled records: Fennel Labs
 Total (USD): 4595.66
 Amounts are shown in USD.
 Reported fields (6): id, name, region, amount, currency, tags
-Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY
 Validated fields (5): id, name, amount, currency, region
+Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY

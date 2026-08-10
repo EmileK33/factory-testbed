@@ -24,20 +24,37 @@ RIGHT_ALIGNED = frozenset({"amount"})
 # apart is what stops a formatting change from editing the validator's notion
 # of a missing value.
 def _missing(value: object) -> bool:
-    return value is None or value == "" or value == []
+    return value is None or value == ""
 
 
 def _format(value: object) -> str:
-    """Render a cell's value. A list (e.g. ``tags``) is joined; anything else
-    is stringified unchanged."""
-    if isinstance(value, list):
-        return ", ".join(value)
-    return str(value)
+    """Render a list cell's value, joined with ", ". Only ``tags`` is
+    list-valued today; see ``_cell()`` for why this is never called on any
+    other field."""
+    return ", ".join(value)
 
 
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
-    return "-" if _missing(value) else _format(value)
+    # tags is the one reported field whose accepted value can be a `[]` list
+    # (parse_tags() always returns list[str] -- never None or ""), so it gets
+    # its own blank rule and its own join-based rendering, both scoped to
+    # this field by name rather than by type. Every other field keeps the
+    # exact original None/""-only rule and the exact original str(value)
+    # rendering: check_record() does not type-check id/name/etc, so a
+    # malformed feed row can legally carry a list there, and a type-based
+    # branch that joined *any* list crashed render_report() on one such row
+    # (PR #236 review, finding B1/F1's crash) instead of rendering it the way
+    # it always rendered before this column existed. A type-based rule also
+    # silently started treating `id: []` as blank on every non-tags column,
+    # which desynced this predicate from validate._missing() and let a
+    # record be simultaneously ACCEPTED and listed as UNLABELLED (finding
+    # F4) -- restoring _missing() above to its original body is what makes
+    # the comment two lines up true again, and this field-name check is what
+    # keeps the tags-only exception from leaking back into it.
+    if field == "tags":
+        return "-" if _missing(value) or value == [] else _format(value)
+    return "-" if _missing(value) else str(value)
 
 
 def _table(rows: list[dict]) -> list[str]:
@@ -101,14 +118,25 @@ def render_report(records: list[dict] | None = None) -> str:
     # reported but not validated). Stating both field sets independently lets
     # a reader compare them without the report asserting a relationship that
     # the next edit to either tuple could silently falsify.
+    # Kept adjacent on purpose (PR #236 review, finding B5): these two lines
+    # are the pair a reader is meant to compare against each other, so an
+    # unrelated line between them made that comparison harder than it needed
+    # to be. Not reordering either tuple's own member order to "line up" the
+    # shared fields -- filtering one tuple's print order by membership in the
+    # other would silently drop a name if a future validated field were ever
+    # NOT also a reported field, while still claiming the correct count in
+    # the parenthetical, which is exactly the kind of representation
+    # fragility this item has spent four gate rounds eliminating. Each line
+    # still prints its own tuple in its own real order; only their position
+    # in the report moved.
     lines.append(
         f"Reported fields ({len(REPORTED_FIELDS)}): {', '.join(REPORTED_FIELDS)}"
     )
-    pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
-    lines.append(f"Settlement pairs in force: {pairs}")
     lines.append(
         f"Validated fields ({len(validate.VALIDATED_FIELDS)}): "
         f"{', '.join(validate.VALIDATED_FIELDS)}"
     )
+    pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
+    lines.append(f"Settlement pairs in force: {pairs}")
 
     return "\n".join(lines) + "\n"
