@@ -11,18 +11,20 @@ from src.summarise import summarise
 def test_summarise_counts_the_feed_it_was_given():
     counts = summarise(load_records())
     assert counts["total"] == len(load_records())
-    assert counts["accepted"] == 5
-    assert counts["rejected"] == ["<unlabelled>", "R-1007", "R-1008"]
+    assert counts["accepted"] == 7
+    assert counts["rejected"] == ["<unlabelled>"]
     assert counts["by_tag"] == {
-        "eu": 2,
+        "eu": 3,
         "high": 1,
         "priority": 1,
         "settled": 2,
-        "na": 2,
+        "na": 3,
         "apac": 1,
         "bulk": 1,
         "small": 1,
         "crossborder": 1,
+        "rail": 1,
+        "air": 1,
     }
 
 

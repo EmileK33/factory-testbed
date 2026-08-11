@@ -349,8 +349,8 @@ def test_shape_rejects_a_false_claim_inserted_after_records_rejected():
     it -- above even round 4's own extended window."""
     text = render_report()
     corrupted = text.replace(
-        "Records rejected: 3\n",
-        "Records rejected: 3\n"
+        "Records rejected: 1\n",
+        "Records rejected: 1\n"
         "Coverage: 5/6 reported fields are validated; all reported fields "
         "are covered.\n",
         1,
@@ -804,7 +804,7 @@ def test_shape_rejects_a_corrupted_records_accepted_line():
     label-identity attacks this round found."""
     text = render_report()
     corrupted = text.replace(
-        "Records accepted: 5\n", "Records accepted: 5 (verified)\n", 1
+        "Records accepted: 7\n", "Records accepted: 7 (verified)\n", 1
     )
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
@@ -821,7 +821,7 @@ def test_shape_rejects_a_corrupted_records_rejected_line():
     in-place fixture."""
     text = render_report()
     corrupted = text.replace(
-        "Records rejected: 3\n", "Records rejected: 3 (verified)\n", 1
+        "Records rejected: 1\n", "Records rejected: 1 (verified)\n", 1
     )
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
@@ -829,14 +829,14 @@ def test_shape_rejects_a_corrupted_records_rejected_line():
 
 def test_shape_rejects_the_records_lines_out_of_order():
     """PR #236 review round 7, Finding 2/A2, reproduced directly: with a
-    single shared regex, "Records rejected: 3 / Records accepted: 5 /
+    single shared regex, "Records rejected: 1 / Records accepted: 7 /
     Records read: 8" (the three real lines, reordered) passed, because the
     check only verified each line was SOME recognised label, not that it
     was the SPECIFIC label expected at that position."""
     text = render_report()
     corrupted = text.replace(
-        "Records read: 8\nRecords accepted: 5\nRecords rejected: 3\n",
-        "Records rejected: 3\nRecords accepted: 5\nRecords read: 8\n",
+        "Records read: 8\nRecords accepted: 7\nRecords rejected: 1\n",
+        "Records rejected: 1\nRecords accepted: 7\nRecords read: 8\n",
         1,
     )
     assert corrupted != text
@@ -851,7 +851,7 @@ def test_shape_rejects_a_repeated_records_label():
     from "read, then accepted, then rejected"."""
     text = render_report()
     corrupted = text.replace(
-        "Records read: 8\nRecords accepted: 5\nRecords rejected: 3\n",
+        "Records read: 8\nRecords accepted: 7\nRecords rejected: 1\n",
         "Records read: 8\nRecords read: 8\nRecords read: 8\n",
         1,
     )
@@ -1527,7 +1527,7 @@ def test_shape_rejects_a_corrupted_total_line_shape():
     signed decimal -- proving _TOTAL_LINE_RE's fullmatch, not merely the
     line's presence."""
     text = render_report()
-    corrupted = text.replace("Total (USD): 4595.66\n", "Total (USD): TBD\n", 1)
+    corrupted = text.replace("Total (USD): 6019.66\n", "Total (USD): TBD\n", 1)
     assert corrupted != text
     assert not report_matches_expected_shape(corrupted)
 
