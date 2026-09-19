@@ -13,13 +13,14 @@ R-1008  Halcyon Air     NA         720  USD       na, air
 
 Net after fees
 --------------
-R-1001       995
-R-1002       403
-R-1003      9775
-R-1004       -15
-R-1005      2313
-R-1007       519
-R-1008       659
+id           net  currency
+R-1001       995  EUR
+R-1002       403  USD
+R-1003      9775  JPY
+R-1004       -15  USD
+R-1005      2313  USD
+R-1007       519  EUR
+R-1008       659  USD
 
 Records read: 8
 Records accepted: 7

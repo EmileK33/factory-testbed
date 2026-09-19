@@ -140,10 +140,13 @@ def render_report(records: list[dict] | None = None) -> str:
     lines.extend(_table(accepted))
     lines.append("")
 
+    fee_rows = apply_fees(accepted)
     lines.append("Net after fees")
     lines.append("--------------")
-    for row in apply_fees(accepted):
-        lines.append(f"{row['id']}  {row['net']:>8}")
+    id_width = max([len("id")] + [len(str(row["id"])) for row in fee_rows])
+    lines.append(f"{'id'.ljust(id_width)}  {'net':>8}  currency")
+    for row in fee_rows:
+        lines.append(f"{row['id']}  {row['net']:>8}  {row['currency']}")
     lines.append("")
 
     total_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)
