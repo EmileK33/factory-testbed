@@ -24,8 +24,9 @@ RIGHT_ALIGNED = frozenset({"amount"})
 # tracked, pre-existing gap -- not this module's to fix). A tag carrying a character
 # str.splitlines() treats as a line break -- e.g. "\n" -- would otherwise reach _cell() untouched
 # and forge an extra physical report row. That threat is not just the ASCII control range:
-# splitlines() (which tools/write_golden.py's summarise_artifact() calls on the rendered report)
-# also breaks on U+0085 NEL, U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR.
+# splitlines() -- the natural way any consumer (a terminal, a log viewer, a diff, or
+# tests/test_report.py's own row-count assertions below) would split the rendered report
+# into lines -- also breaks on U+0085 NEL, U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR.
 #
 # Escaping by str.isprintable() (a prior version of this function) is NOT the right property: it
 # rejects 965,114 codepoints, not 10, and mangles legitimate tag content it has no business

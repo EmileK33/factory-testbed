@@ -100,3 +100,53 @@ def test_reject_reason_returns_none_for_a_clean_record():
 
 def test_reject_reason_names_a_non_dict_record():
     assert reject_reason(["not", "a", "dict"]) == "not a record"
+
+
+# reject_reason()'s checks run in a fixed sequence: missing id -> missing name -> missing
+# amount -> missing currency -> missing region -> unknown region -> unknown currency ->
+# amount not a whole number -> negative amount. test_reject_reason_reports_only_the_first_
+# of_several_failures above already pins one pairing (missing id wins over negative
+# amount, which are five checks apart); it does NOT pin that each check individually
+# precedes its immediate neighbour. Reordering just two adjacent checks (e.g. checking
+# currency before region, or reversing the missing-fields loop) would still pass every
+# test above. Each test below fails a record on exactly one ADJACENT pair of checks and
+# asserts the earlier one wins, so any local reordering fails a named test.
+
+
+def test_reject_reason_prefers_missing_id_over_missing_name():
+    record = {key: value for key, value in CLEAN.items() if key not in ("id", "name")}
+    assert reject_reason(record) == "missing id"
+
+
+def test_reject_reason_prefers_missing_name_over_missing_amount():
+    record = {key: value for key, value in CLEAN.items() if key not in ("name", "amount")}
+    assert reject_reason(record) == "missing name"
+
+
+def test_reject_reason_prefers_missing_amount_over_missing_currency():
+    record = {key: value for key, value in CLEAN.items() if key not in ("amount", "currency")}
+    assert reject_reason(record) == "missing amount"
+
+
+def test_reject_reason_prefers_missing_currency_over_missing_region():
+    record = {key: value for key, value in CLEAN.items() if key not in ("currency", "region")}
+    assert reject_reason(record) == "missing currency"
+
+
+def test_reject_reason_prefers_unknown_region_over_unknown_currency():
+    record = {**CLEAN, "region": "LATAM", "currency": "GBP"}
+    assert reject_reason(record) == "unknown region"
+
+
+def test_reject_reason_prefers_unknown_currency_over_amount_not_whole_number():
+    record = {**CLEAN, "currency": "GBP", "amount": True}
+    assert reject_reason(record) == "unknown currency"
+
+
+def test_reject_reason_prefers_amount_not_whole_number_over_negative_amount():
+    # -1.5 fails BOTH checks under either order: it's not an int (fails _is_whole_number)
+    # AND it's less than zero. Whole-number-check-first is what "amount is not a whole
+    # number" (rather than "negative amount") proves; a mutant checking amount < 0 first
+    # would misreport -1.5 as "negative amount" instead.
+    record = {**CLEAN, "amount": -1.5}
+    assert reject_reason(record) == "amount is not a whole number"

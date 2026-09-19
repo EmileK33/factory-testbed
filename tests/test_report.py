@@ -142,8 +142,8 @@ def test_report_never_lets_a_tag_forge_an_extra_physical_row(separator):
     # cannot distinguish an escape that covers only ASCII "\n" from one that covers the whole
     # property str.isprintable() identifies, because U+0085/U+2028/U+2029 are not "\n" and
     # split("\n") would report the row count as unchanged even while it is actually forged.
-    # splitlines() is also the real consumer that matters here:
-    # tools/write_golden.py's summarise_artifact() calls splitlines() on the rendered report.
+    # splitlines() is also the natural way any real consumer -- a terminal, a log viewer, a
+    # diff -- would split the rendered report into lines, which is the actual threat model.
     rows = [
         {
             "id": "R-9003",
@@ -174,12 +174,13 @@ def test_report_escapes_a_line_separator_from_the_raw_feed_through_the_full_pipe
     }
     text = render_report(records=[record])
     lines = text.splitlines()
-    # Checked directly by execution rather than assumed: render_report() always appends the
-    # coverage line last, so lines[-1] is "Validation covers: ..." regardless of a forged row
-    # earlier in the table -- asserting on it would pass whether or not this fix exists, so it is
-    # deliberately not asserted here. What a forged row actually corrupts is the table itself: the
-    # tag's text spills past this record's own row into what looks like an extra, unattributed
-    # physical line, so the row itself stops containing its own tag.
+    # Checked directly by execution rather than assumed: render_report() now ends with the
+    # "Rejected records" footer, not the coverage line -- for this single, valid record
+    # lines[-1] is "None rejected." regardless of a forged row earlier in the table --
+    # asserting on it would pass whether or not this fix exists, so it is deliberately not
+    # asserted here. What a forged row actually corrupts is the table itself: the tag's text
+    # spills past this record's own row into what looks like an extra, unattributed physical
+    # line, so the row itself stops containing its own tag.
     row_line = next(candidate for candidate in lines if candidate.startswith("R-9004 "))
     assert "forged row" in row_line
 
@@ -271,13 +272,29 @@ def test_report_handles_an_all_accepted_feed_without_a_keyerror():
     assert text.rstrip("\n").endswith("Rejected records\n----------------\nNone rejected.")
 
 
+def _line_starting_with(text, prefix):
+    """The one line in *text* that starts with *prefix*, matched exactly (not a
+    substring search) -- "Records read: 5" must not match a rendered "Records read: 51",
+    which `"Records read: 5" in text` would silently accept."""
+    return next(line for line in text.splitlines() if line.startswith(prefix))
+
+
+def _footer_lines(text):
+    """The footer's own lines, from the "Rejected records" header to the end, exactly --
+    used to pin both the exact text of each line and their order, rather than checking
+    each reason string is merely present somewhere in the whole report."""
+    return text[text.index("Rejected records\n"):].rstrip("\n").splitlines()
+
+
 def test_report_all_three_count_lines_come_from_the_summary_not_the_raw_input():
     # The load-bearing constraint: the renderer must PRESENT what summarise() reports,
     # never re-derive it. Real input here is 2 accepted records (real total=2,
     # accepted=2, rejected=0); the injected summary uses total=5, accepted=3 (implied
     # rejected=2) -- every one of the three numbers differs from what the real input
     # would produce, so a renderer reading len(raw)/len(accepted) directly for any of
-    # the three lines, instead of summary, would fail this.
+    # the three lines, instead of summary, would fail this. Each line is matched exactly
+    # (via _line_starting_with), not by substring: "Records read: 5" in text would also
+    # accept a corrupted "Records read: 51".
     clean2 = {**CLEAN, "id": "R-8002"}
     fake_summary = {
         "total": 5, "accepted": 3, "by_tag": {},
@@ -285,38 +302,44 @@ def test_report_all_three_count_lines_come_from_the_summary_not_the_raw_input():
     }
     with mock.patch("src.report.summarise", return_value=fake_summary):
         text = render_report(records=[CLEAN, clean2])
-    assert "Records read: 5" in text
-    assert "Records accepted: 3" in text
-    assert "Records rejected: 2" in text
-    assert "zz-impossible-reason-xyz: 999" in text
-    assert "None rejected." not in text
-    # the real input's own counts must not leak through anywhere
-    assert "Records read: 2" not in text
-    assert "Records rejected: 0" not in text
+    assert _line_starting_with(text, "Records read:") == "Records read: 5"
+    assert _line_starting_with(text, "Records accepted:") == "Records accepted: 3"
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 2"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "zz-impossible-reason-xyz: 999"]
+    # the real input's own counts must not leak through anywhere, as an exact line
+    lines = text.splitlines()
+    assert "Records read: 2" not in lines
+    assert "Records rejected: 0" not in lines
 
 
 def test_report_footer_lists_the_reason_and_count():
     text = render_report()
-    assert text.rstrip("\n").endswith("Rejected records\n----------------\nmissing id: 1")
+    assert _footer_lines(text) == ["Rejected records", "----------------", "missing id: 1"]
 
 
 def test_report_footer_says_none_rejected_for_a_clean_feed():
     text = render_report(records=[CLEAN])
-    assert text.rstrip("\n").endswith("Rejected records\n----------------\nNone rejected.")
+    assert _footer_lines(text) == ["Rejected records", "----------------", "None rejected."]
 
 
 def test_report_footer_lists_multiple_reasons_each_on_its_own_line():
+    # Also pins the footer's ORDER: first-seen-in-the-feed order (r1, whose reason is
+    # "unknown currency", is processed before r2). No particular order is required by the
+    # issue, but leaving it unpinned lets a reversal (e.g. of summarise()'s reason_counts
+    # dict) pass silently -- see the matching order test in tests/test_counts.py for the
+    # summarise()-level pin of the same decision.
     r1 = {**CLEAN, "id": "R-8003", "currency": "GBP"}
     r2 = {**CLEAN, "id": "R-8004", "region": "LATAM"}
     text = render_report(records=[r1, r2])
-    assert "unknown currency: 1" in text
-    assert "unknown region: 1" in text
+    assert _footer_lines(text) == [
+        "Rejected records", "----------------", "unknown currency: 1", "unknown region: 1",
+    ]
 
 
 def test_report_footer_counts_agree_with_records_rejected_line():
     text = render_report()
-    assert "Records rejected: 1" in text
-    assert "missing id: 1" in text
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 1"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "missing id: 1"]
 
 
 def test_validation_coverage_line_matches_the_real_render():

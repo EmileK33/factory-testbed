@@ -126,3 +126,26 @@ def test_summarise_aggregates_two_records_with_the_same_reason():
     r2 = {**CLEAN, "id": "R-3010", "currency": "GBP"}
     counts = summarise([r1, r2])
     assert counts["rejection_reasons"] == [{"reason": "unknown currency", "count": 2}]
+
+
+def test_summarise_orders_rejection_reasons_by_first_seen_in_the_feed():
+    # The issue does not mandate a particular order for the footer's reasons; this pins
+    # one deliberately (first-seen-in-the-feed order) so a change to summarise()'s
+    # iteration -- e.g. reason_counts.items() silently reversed -- fails a named test
+    # instead of going unnoticed. Checked in both feed orders, not just one, so a
+    # coincidental match (e.g. if the two reason strings happened to already sort
+    # alphabetically the same way) can't hide a real reversal.
+    unknown_currency = {**CLEAN, "id": "R-3011", "currency": "GBP"}
+    unknown_region = {**CLEAN, "id": "R-3012", "region": "LATAM"}
+
+    counts = summarise([unknown_currency, unknown_region])
+    assert counts["rejection_reasons"] == [
+        {"reason": "unknown currency", "count": 1},
+        {"reason": "unknown region", "count": 1},
+    ]
+
+    counts_reversed = summarise([unknown_region, unknown_currency])
+    assert counts_reversed["rejection_reasons"] == [
+        {"reason": "unknown region", "count": 1},
+        {"reason": "unknown currency", "count": 1},
+    ]
