@@ -21,6 +21,7 @@ def test_summarise_counts_the_feed_it_was_given():
     counts = summarise(load_records())
     assert counts["total"] == len(load_records())
     assert counts["accepted"] == 7
+    assert counts["rejected_count"] == 1
     assert counts["rejected"] == ["<unlabelled>"]
     # Hand-derived from check_record()'s "tags" list for the 7 accepted records
     # in the committed data/records.json (R-1001..R-1005, R-1007, R-1008; the
@@ -49,6 +50,7 @@ def test_by_tag_is_empty_when_input_is_empty():
     below, which runs the loop but takes the rejected branch every time."""
     counts = summarise([])
     assert counts["by_tag"] == {}
+    assert counts["rejected_count"] == 0
 
 
 def test_by_tag_is_empty_when_everything_is_rejected():
@@ -61,6 +63,7 @@ def test_by_tag_is_empty_when_everything_is_rejected():
     ]
     counts = summarise(all_rejected)
     assert counts["accepted"] == 0
+    assert counts["rejected_count"] == 2
     assert counts["by_tag"] == {}
 
 

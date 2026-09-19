@@ -125,16 +125,15 @@ def render_report(records: list[dict] | None = None) -> str:
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
     # The pipeline's own accounting, not a second one derived here: report.py must not
     # recompute how many records were rejected or why -- that is summarise()'s job, backed
-    # by src.validate.reject_reason(). Using it for the counts below too (not only the new
-    # footer) is what keeps this function from re-introducing the two-place drift the
-    # footer's own load-bearing constraint warns about. "total" and "accepted" are the two
-    # keys summarise() ALWAYS sets (unlike "rejected", which is a pre-existing conditional
-    # key -- present only when non-empty); the rejected count below is deliberately
-    # `summary["total"] - summary["accepted"]`, never `len(summary["rejected"])` or
-    # `summary["rejected"]` in any form, so it cannot KeyError on an empty feed or an
-    # all-accepted one. Note this does mean every record's validation predicate runs a
-    # second time here (accepted() above already ran it once): still linear (O(n), not
-    # worse), just not free -- not something this change tries to optimise away.
+    # by src.validate.reject_reason(). Every count line below is printed directly from
+    # `summary`, with no arithmetic in this function: "total", "accepted" and
+    # "rejected_count" are the three keys summarise() ALWAYS sets (unlike "rejected", the
+    # pre-existing conditional key -- present only when non-empty -- which this function
+    # never reads at all), so nothing here can KeyError on an empty feed or an all-accepted
+    # one, and nothing here can independently drift from what summarise() decided. Note
+    # this does mean every record's validation predicate runs a second time here
+    # (accepted() above already ran it once): still linear (O(n), not worse), just not
+    # free -- not something this change tries to optimise away.
     summary = summarise(raw)
 
     lines = ["Settlement report", "=================", ""]
@@ -151,7 +150,7 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Records read: {summary['total']}")
     lines.append(f"Records accepted: {summary['accepted']}")
-    lines.append(f"Records rejected: {summary['total'] - summary['accepted']}")
+    lines.append(f"Records rejected: {summary['rejected_count']}")
     lines.append("")
 
     unlabelled = [row.get("name", "?") for row in raw if _missing(row.get("id"))]

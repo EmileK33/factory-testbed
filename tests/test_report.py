@@ -46,6 +46,20 @@ PRE_FOOTER_TEXT = (
 )
 
 
+def _line_starting_with(text, prefix):
+    """The one line in *text* that starts with *prefix*, matched exactly (not a
+    substring search) -- "Records read: 5" must not match a rendered "Records read: 51",
+    which `"Records read: 5" in text` would silently accept."""
+    return next(line for line in text.splitlines() if line.startswith(prefix))
+
+
+def _footer_lines(text):
+    """The footer's own lines, from the "Rejected records" header to the end, exactly --
+    used to pin both the exact text of each line and their order, rather than checking
+    each reason string is merely present somewhere in the whole report."""
+    return text[text.index("Rejected records\n"):].rstrip("\n").splitlines()
+
+
 def test_report_lists_every_accepted_record():
     text = render_report()
     accepted = [row for row in (check_record(r) for r in load_records()) if row]
@@ -255,12 +269,14 @@ def test_report_footer_dashes_match_the_header_length():
 def test_report_handles_an_empty_feed_without_a_keyerror():
     # The footer's "Records rejected" line must never read summary["rejected"] (a
     # pre-existing, deliberately-untouched conditional key, absent when nothing is
-    # rejected) -- doing so would KeyError on exactly this input.
+    # rejected) -- doing so would KeyError on exactly this input. Each count line is
+    # matched exactly, not by substring: "Records rejected: 0" in text would also accept
+    # a corrupted "Records rejected: 01".
     text = render_report(records=[])
-    assert "Records read: 0" in text
-    assert "Records accepted: 0" in text
-    assert "Records rejected: 0" in text
-    assert text.rstrip("\n").endswith("Rejected records\n----------------\nNone rejected.")
+    assert _line_starting_with(text, "Records read:") == "Records read: 0"
+    assert _line_starting_with(text, "Records accepted:") == "Records accepted: 0"
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 0"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "None rejected."]
 
 
 def test_report_handles_an_all_accepted_feed_without_a_keyerror():
@@ -268,48 +284,36 @@ def test_report_handles_an_all_accepted_feed_without_a_keyerror():
     # everything is accepted -- "rejected" is still absent from the summary here.
     clean_feed = [{**CLEAN, "id": f"X-{i}"} for i in range(7)]
     text = render_report(records=clean_feed)
-    assert "Records rejected: 0" in text
-    assert text.rstrip("\n").endswith("Rejected records\n----------------\nNone rejected.")
-
-
-def _line_starting_with(text, prefix):
-    """The one line in *text* that starts with *prefix*, matched exactly (not a
-    substring search) -- "Records read: 5" must not match a rendered "Records read: 51",
-    which `"Records read: 5" in text` would silently accept."""
-    return next(line for line in text.splitlines() if line.startswith(prefix))
-
-
-def _footer_lines(text):
-    """The footer's own lines, from the "Rejected records" header to the end, exactly --
-    used to pin both the exact text of each line and their order, rather than checking
-    each reason string is merely present somewhere in the whole report."""
-    return text[text.index("Rejected records\n"):].rstrip("\n").splitlines()
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 0"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "None rejected."]
 
 
 def test_report_all_three_count_lines_come_from_the_summary_not_the_raw_input():
     # The load-bearing constraint: the renderer must PRESENT what summarise() reports,
     # never re-derive it. Real input here is 2 accepted records (real total=2,
-    # accepted=2, rejected=0); the injected summary uses total=5, accepted=3 (implied
-    # rejected=2) -- every one of the three numbers differs from what the real input
-    # would produce, so a renderer reading len(raw)/len(accepted) directly for any of
-    # the three lines, instead of summary, would fail this. Each line is matched exactly
+    # accepted=2, rejected_count=0); the injected summary uses total=5, accepted=3, and
+    # -- deliberately NOT total-accepted (which would be 2) -- rejected_count=999, so a
+    # renderer that still computed `total - accepted` itself, instead of printing
+    # summary["rejected_count"] directly, would fail this. Each line is matched exactly
     # (via _line_starting_with), not by substring: "Records read: 5" in text would also
     # accept a corrupted "Records read: 51".
     clean2 = {**CLEAN, "id": "R-8002"}
     fake_summary = {
-        "total": 5, "accepted": 3, "by_tag": {},
-        "rejection_reasons": [{"reason": "zz-impossible-reason-xyz", "count": 999}],
+        "total": 5, "accepted": 3, "rejected_count": 999, "by_tag": {},
+        "rejection_reasons": [{"reason": "zz-impossible-reason-xyz", "count": 12}],
     }
     with mock.patch("src.report.summarise", return_value=fake_summary):
         text = render_report(records=[CLEAN, clean2])
     assert _line_starting_with(text, "Records read:") == "Records read: 5"
     assert _line_starting_with(text, "Records accepted:") == "Records accepted: 3"
-    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 2"
-    assert _footer_lines(text) == ["Rejected records", "----------------", "zz-impossible-reason-xyz: 999"]
-    # the real input's own counts must not leak through anywhere, as an exact line
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 999"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "zz-impossible-reason-xyz: 12"]
+    # the real input's own counts, and the total-accepted arithmetic result, must not
+    # leak through anywhere, as an exact line
     lines = text.splitlines()
     assert "Records read: 2" not in lines
     assert "Records rejected: 0" not in lines
+    assert "Records rejected: 2" not in lines
 
 
 def test_report_footer_lists_the_reason_and_count():
@@ -343,6 +347,8 @@ def test_report_footer_counts_agree_with_records_rejected_line():
 
 
 def test_validation_coverage_line_matches_the_real_render():
+    # Exact equality, not substring: a rendered line ending in ", fabricated" (or any
+    # other trailing text) would still satisfy `validation_coverage_line() in text`.
     text = render_report()
-    assert validation_coverage_line() in text
+    assert _line_starting_with(text, "Validation covers:") == validation_coverage_line()
     assert validation_coverage_line() == "Validation covers: id, name, amount, currency, region"
