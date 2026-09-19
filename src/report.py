@@ -6,8 +6,6 @@ byte-for-byte by ``tests/test_golden.py``.
 
 from __future__ import annotations
 
-import re
-
 from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
@@ -20,17 +18,32 @@ REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 RIGHT_ALIGNED = frozenset({"amount"})
 
 # parse_tags() does not filter or sanitise the feed's raw tag text (that is its own, separately
-# tracked, pre-existing gap -- not this module's to fix). A tag carrying a control character --
-# most importantly a line break -- would otherwise reach _cell() untouched: a newline forges an
-# extra physical line in what _table() otherwise guarantees is one output line per record, and any
-# other control character can corrupt a terminal/file rendering of the report. This is scoped to
-# the tags cell only; every other REPORTED_FIELDS column is untouched.
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+# tracked, pre-existing gap -- not this module's to fix). A tag carrying a character str.isprintable()
+# rejects -- e.g. a line break -- would otherwise reach _cell() untouched. That is not just the
+# ASCII control range: str.splitlines() (which tools/write_golden.py's summarise_artifact() calls
+# on the rendered report) also breaks on U+0085 NEL, U+2028 LINE SEPARATOR and U+2029 PARAGRAPH
+# SEPARATOR, none of which "\x00-\x1f\x7f" would catch. Rather than enumerate line-break characters
+# one discovery at a time, escape by the property that actually matters: every character
+# str.isprintable() rejects (verified exhaustively over the full Unicode range to be exactly the
+# ten codepoints splitlines() treats as a break: 0x0a-0x0d, 0x1c-0x1e, 0x85, 0x2028, 0x2029) is
+# escaped, and every printable character -- letters, digits, space, punctuation, emoji -- passes
+# through unchanged. This is scoped to the tags cell only; every other REPORTED_FIELDS column is
+# untouched.
+def _escape_char(char: str) -> str:
+    if char.isprintable():
+        return char
+    codepoint = ord(char)
+    if codepoint <= 0xFF:
+        return f"\\x{codepoint:02x}"
+    if codepoint <= 0xFFFF:
+        return f"\\u{codepoint:04x}"
+    return f"\\U{codepoint:08x}"
 
 
 def _escape_tag(tag: str) -> str:
-    """Escape control characters in a single tag so it cannot forge a new physical report row."""
-    return _CONTROL_CHARS.sub(lambda match: f"\\x{ord(match.group()):02x}", tag)
+    """Escape non-printable characters in a single tag so it cannot forge a new physical report
+    row (or otherwise corrupt a terminal/file rendering of the report)."""
+    return "".join(_escape_char(char) for char in tag)
 
 
 # Deliberately not imported from src.validate. That predicate decides what the

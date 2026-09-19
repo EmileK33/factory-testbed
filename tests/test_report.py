@@ -90,13 +90,21 @@ def test_report_still_stringifies_a_non_tags_list_value(field):
     assert "[1]" in row_line
 
 
-def test_report_never_lets_a_tag_forge_an_extra_physical_row():
-    # A tag carrying a raw line break reaches _cell() unfiltered by parse_tags() -- a pre-existing
-    # gap in src/parse.py that is tracked separately and deliberately not fixed here. _table()
-    # must still guarantee exactly one physical output line per logical row it returns: joining
-    # its lines with "\n" and splitting again must report the same count that _table() itself
-    # returned. Without escaping, a "\n" embedded in a tag turns one logical row into two physical
-    # lines, forging what looks like an extra report row.
+@pytest.mark.parametrize(
+    "separator",
+    [chr(10), chr(0x85), chr(0x2028), chr(0x2029)],
+    ids=["LF", "NEL", "LS", "PS"],
+)
+def test_report_never_lets_a_tag_forge_an_extra_physical_row(separator):
+    # A tag carrying a character str.splitlines() treats as a line break reaches _cell()
+    # unfiltered by parse_tags() -- a pre-existing gap in src/parse.py, tracked separately and
+    # deliberately not fixed here. _table() must still guarantee exactly one physical output line
+    # per logical row it returns. Asserting on splitlines() here, not split("\n"): split("\n")
+    # cannot distinguish an escape that covers only ASCII "\n" from one that covers the whole
+    # property str.isprintable() identifies, because U+0085/U+2028/U+2029 are not "\n" and
+    # split("\n") would report the row count as unchanged even while it is actually forged.
+    # splitlines() is also the real consumer that matters here:
+    # tools/write_golden.py's summarise_artifact() calls splitlines() on the rendered report.
     rows = [
         {
             "id": "R-9003",
@@ -104,9 +112,34 @@ def test_report_never_lets_a_tag_forge_an_extra_physical_row():
             "region": "NA",
             "amount": 75,
             "currency": "USD",
-            "tags": ["high\nforged row, y"],
+            "tags": [f"high{separator}forged row, y"],
         }
     ]
     logical_lines = _table(rows)
-    physical_lines = "\n".join(logical_lines).split("\n")
+    physical_lines = "\n".join(logical_lines).splitlines()
     assert len(physical_lines) == len(logical_lines)
+
+
+def test_report_escapes_a_line_separator_from_the_raw_feed_through_the_full_pipeline():
+    # No committed test exercised the full check_record() -> render_report() path with a raw feed
+    # string carrying a line-breaking character -- only the already-parsed-list form (above) was
+    # covered. U+2028 LINE SEPARATOR is used because it is one of the three separators the
+    # ASCII-only "\x00-\x1f\x7f" denylist (this module's first attempt at this fix) missed.
+    record = {
+        "id": "R-9004",
+        "name": "LS Co",
+        "amount": 20,
+        "currency": "USD",
+        "region": "NA",
+        "tags": "high" + chr(0x2028) + "forged row",
+    }
+    text = render_report(records=[record])
+    lines = text.splitlines()
+    # Checked directly by execution rather than assumed: render_report() always appends the
+    # coverage line last, so lines[-1] is "Validation covers: ..." regardless of a forged row
+    # earlier in the table -- asserting on it would pass whether or not this fix exists, so it is
+    # deliberately not asserted here. What a forged row actually corrupts is the table itself: the
+    # tag's text spills past this record's own row into what looks like an extra, unattributed
+    # physical line, so the row itself stops containing its own tag.
+    row_line = next(candidate for candidate in lines if candidate.startswith("R-9004 "))
+    assert "forged row" in row_line
