@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.report import render_report
+from src.report import render_report, validation_coverage_line
 
 GOLDEN_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "report.golden.txt"
 
@@ -30,11 +30,17 @@ def write_golden(path: str | Path | None = None) -> Path:
 def summarise_artifact() -> str:
     """One line describing the committed artifact, for the release notes.
 
-    The report ends with the validation-coverage line, so the last line is the
-    one worth quoting. Nothing downstream re-derives this, so it is read as
-    written.
+    Historically the report ended with the validation-coverage line, so the
+    last line was the one worth quoting. #247 appends a "Rejected records"
+    footer after it, and separately, render_report() prints feed-controlled
+    text (a record's ``name``/``id``) completely unescaped, so scanning the
+    rendered report for this fact -- by position OR by prefix -- is not
+    safe: a malicious record could forge a line that looks like the
+    genuine one. This calls src.report.validation_coverage_line() directly
+    instead, the same single source of truth render_report() itself uses,
+    so this never reads rendered (and therefore feed-forgeable) text at all.
     """
-    return render_report().splitlines()[-1]
+    return validation_coverage_line()
 
 
 if __name__ == "__main__":

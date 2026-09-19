@@ -1,10 +1,63 @@
 """Tests for the rendered settlement report."""
 
+import unittest.mock as mock
+
 import pytest
 
 from src.records import load_records
-from src.report import _escape_tag, _table, render_report
+from src.report import _escape_tag, _table, render_report, validation_coverage_line
 from src.validate import check_record
+
+CLEAN = {
+    "id": "R-8001",
+    "name": "Report Test Co",
+    "amount": 500,
+    "currency": "USD",
+    "region": "NA",
+    "tags": "na,test",
+}
+
+# Hand-captured from artifacts/report.golden.txt as committed on main BEFORE #247 (i.e.
+# before the "Rejected records" footer existed), NOT derived from render_report() itself --
+# doing so would make the comparison below tautological. Everything through the final
+# "Validation covers: ..." line, inclusive, must remain byte-for-byte identical: #247 may
+# only ever APPEND a footer after it, never change a line above it.
+PRE_FOOTER_TEXT = (
+    "Settlement report\n=================\n\n"
+    "id      name            region  amount  currency  tags\n"
+    "------  --------------  ------  ------  --------  ---------------------------\n"
+    "R-1001  Aster Holdings  EU        1200  EUR       eu, high, priority, settled\n"
+    "R-1002  Borel Systems   NA         450  USD       na, settled\n"
+    "R-1003  Chandra Foods   APAC      9800  JPY       apac, bulk\n"
+    "R-1004  Delta Freight   NA          10  USD       na, small\n"
+    "R-1005  Eiger Metals    EU        2750  USD       eu, crossborder\n"
+    "R-1007  Garnet Rail     EU         640  EUR       eu, rail\n"
+    "R-1008  Halcyon Air     NA         720  USD       na, air\n\n"
+    "Net after fees\n--------------\n"
+    "R-1001       995\nR-1002       403\nR-1003      9775\nR-1004       -15\n"
+    "R-1005      2313\nR-1007       519\nR-1008       659\n\n"
+    "Records read: 8\nRecords accepted: 7\nRecords rejected: 1\n\n"
+    "Unlabelled records: Fennel Labs\n"
+    "Total (USD): 5980.90\n"
+    "Amounts are shown in USD.\n"
+    "5 of 6 reported fields are checked by the validation rules.\n"
+    "Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY\n"
+    "Validation covers: id, name, amount, currency, region\n"
+)
+
+
+def _line_starting_with(text, prefix):
+    """The one line in *text* that starts with *prefix*, matched exactly (not a
+    substring search) -- "Records read: 5" must not match a rendered "Records read: 51",
+    which `"Records read: 5" in text` would silently accept."""
+    return next(line for line in text.splitlines() if line.startswith(prefix))
+
+
+def _footer_lines(text):
+    """The footer's own lines, from the "Rejected records" header to the end, exactly --
+    used to pin both the exact text of each line and their order, rather than checking
+    each reason string is merely present somewhere in the whole report."""
+    return text[text.index("Rejected records\n"):].rstrip("\n").splitlines()
 
 
 def test_report_lists_every_accepted_record():
@@ -103,8 +156,8 @@ def test_report_never_lets_a_tag_forge_an_extra_physical_row(separator):
     # cannot distinguish an escape that covers only ASCII "\n" from one that covers the whole
     # property str.isprintable() identifies, because U+0085/U+2028/U+2029 are not "\n" and
     # split("\n") would report the row count as unchanged even while it is actually forged.
-    # splitlines() is also the real consumer that matters here:
-    # tools/write_golden.py's summarise_artifact() calls splitlines() on the rendered report.
+    # splitlines() is also the natural way any real consumer -- a terminal, a log viewer, a
+    # diff -- would split the rendered report into lines, which is the actual threat model.
     rows = [
         {
             "id": "R-9003",
@@ -135,12 +188,13 @@ def test_report_escapes_a_line_separator_from_the_raw_feed_through_the_full_pipe
     }
     text = render_report(records=[record])
     lines = text.splitlines()
-    # Checked directly by execution rather than assumed: render_report() always appends the
-    # coverage line last, so lines[-1] is "Validation covers: ..." regardless of a forged row
-    # earlier in the table -- asserting on it would pass whether or not this fix exists, so it is
-    # deliberately not asserted here. What a forged row actually corrupts is the table itself: the
-    # tag's text spills past this record's own row into what looks like an extra, unattributed
-    # physical line, so the row itself stops containing its own tag.
+    # Checked directly by execution rather than assumed: render_report() now ends with the
+    # "Rejected records" footer, not the coverage line -- for this single, valid record
+    # lines[-1] is "None rejected." regardless of a forged row earlier in the table --
+    # asserting on it would pass whether or not this fix exists, so it is deliberately not
+    # asserted here. What a forged row actually corrupts is the table itself: the tag's text
+    # spills past this record's own row into what looks like an extra, unattributed physical
+    # line, so the row itself stops containing its own tag.
     row_line = next(candidate for candidate in lines if candidate.startswith("R-9004 "))
     assert "forged row" in row_line
 
@@ -198,3 +252,124 @@ def test_report_leaves_legitimate_tag_content_unchanged(value):
     # flagged as a design note (not fixed, per instruction) to confirm this escape does not
     # incidentally interfere with it either.
     assert _escape_tag(value) == value
+
+
+def test_report_body_above_the_footer_is_unchanged():
+    assert render_report().startswith(PRE_FOOTER_TEXT)
+
+
+def test_report_footer_dashes_match_the_header_length():
+    text = render_report()
+    idx = text.index("Rejected records\n")
+    header_line, dash_line = text[idx:].splitlines()[:2]
+    assert dash_line == "-" * len(header_line)
+    assert len(dash_line) == 16
+
+
+def test_report_handles_an_empty_feed_without_a_keyerror():
+    # The footer's "Records rejected" line must never read summary["rejected"] (a
+    # pre-existing, deliberately-untouched conditional key, absent when nothing is
+    # rejected) -- doing so would KeyError on exactly this input. Each count line is
+    # matched exactly, not by substring: "Records rejected: 0" in text would also accept
+    # a corrupted "Records rejected: 01".
+    text = render_report(records=[])
+    assert _line_starting_with(text, "Records read:") == "Records read: 0"
+    assert _line_starting_with(text, "Records accepted:") == "Records accepted: 0"
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 0"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "None rejected."]
+
+
+def test_report_handles_an_all_accepted_feed_without_a_keyerror():
+    # Same KeyError risk as the empty-feed case above, but with a non-empty feed where
+    # everything is accepted -- "rejected" is still absent from the summary here.
+    clean_feed = [{**CLEAN, "id": f"X-{i}"} for i in range(7)]
+    text = render_report(records=clean_feed)
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 0"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "None rejected."]
+
+
+def test_report_all_three_count_lines_come_from_the_summary_not_the_raw_input():
+    # The load-bearing constraint: the renderer must PRESENT what summarise() reports,
+    # never re-derive it -- byte for byte, not just numerically. Real input here is 2
+    # accepted records (real total=2, accepted=2, rejected_count=0); the injected summary
+    # uses total=5, accepted=3, and -- deliberately NOT total-accepted (which would be
+    # 2) -- rejected_count=999, so a renderer that still computed `total - accepted`
+    # itself, instead of printing summary["rejected_count"] directly, would fail this.
+    # The injected reason is deliberately mixed-case WITH leading/trailing spaces and
+    # not already title-cased: "zz-impossible-reason-xyz" (an earlier version of this
+    # test) is already all-lowercase, so a renderer applying reason.lower() -- or
+    # .upper() / .strip() / .title() -- before printing it would still pass. Every one
+    # of those four transformations changes this string, so all four are observable.
+    # Each line is matched exactly (via _line_starting_with / _footer_lines), not by
+    # substring: "Records read: 5" in text would also accept a corrupted "Records read: 51".
+    clean2 = {**CLEAN, "id": "R-8002"}
+    fake_summary = {
+        "total": 5, "accepted": 3, "rejected_count": 999, "by_tag": {},
+        "rejection_reasons": [{"reason": "  Mixed Case REASON value  ", "count": 12}],
+    }
+    with mock.patch("src.report.summarise", return_value=fake_summary):
+        text = render_report(records=[CLEAN, clean2])
+    assert _line_starting_with(text, "Records read:") == "Records read: 5"
+    assert _line_starting_with(text, "Records accepted:") == "Records accepted: 3"
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 999"
+    assert _footer_lines(text) == [
+        "Rejected records", "----------------", "  Mixed Case REASON value  : 12",
+    ]
+    # the real input's own counts, and the total-accepted arithmetic result, must not
+    # leak through anywhere, as an exact line
+    lines = text.splitlines()
+    assert "Records read: 2" not in lines
+    assert "Records rejected: 0" not in lines
+    assert "Records rejected: 2" not in lines
+
+
+def test_report_footer_lists_the_reason_and_count():
+    text = render_report()
+    assert _footer_lines(text) == ["Rejected records", "----------------", "missing id: 1"]
+
+
+def test_report_footer_says_none_rejected_for_a_clean_feed():
+    text = render_report(records=[CLEAN])
+    assert _footer_lines(text) == ["Rejected records", "----------------", "None rejected."]
+
+
+def test_report_footer_lists_multiple_reasons_each_on_its_own_line():
+    # Injected at the renderer level (like test_report_all_three_count_lines_come_from_
+    # the_summary_not_the_raw_input) so the reasons, their order, and their counts are
+    # all chosen to defeat plausible renderer bugs, not just whatever the real feed
+    # happens to produce:
+    #   - "zeta-reason" before "alpha-reason" is the REVERSE of alphabetical order, so a
+    #     renderer that sorts reasons (instead of presenting summarise()'s own order)
+    #     would print alpha-reason first and fail this. An earlier version of this test
+    #     used "unknown currency"/"unknown region", which are already alphabetical, so a
+    #     sorting bug was indistinguishable from correct behaviour.
+    #   - counts 7 and 3 are distinct, so a renderer that reuses one reason's count for
+    #     every line (e.g. always printing `reasons[0]['count']`) would print
+    #     "alpha-reason: 7" and fail this. An earlier version used two counts that both
+    #     happened to be 1, which such a bug could not have been distinguished from.
+    fake_summary = {
+        "total": 2, "accepted": 0, "rejected_count": 2, "by_tag": {},
+        "rejection_reasons": [
+            {"reason": "zeta-reason", "count": 7},
+            {"reason": "alpha-reason", "count": 3},
+        ],
+    }
+    with mock.patch("src.report.summarise", return_value=fake_summary):
+        text = render_report(records=[CLEAN])
+    assert _footer_lines(text) == [
+        "Rejected records", "----------------", "zeta-reason: 7", "alpha-reason: 3",
+    ]
+
+
+def test_report_footer_counts_agree_with_records_rejected_line():
+    text = render_report()
+    assert _line_starting_with(text, "Records rejected:") == "Records rejected: 1"
+    assert _footer_lines(text) == ["Rejected records", "----------------", "missing id: 1"]
+
+
+def test_validation_coverage_line_matches_the_real_render():
+    # Exact equality, not substring: a rendered line ending in ", fabricated" (or any
+    # other trailing text) would still satisfy `validation_coverage_line() in text`.
+    text = render_report()
+    assert _line_starting_with(text, "Validation covers:") == validation_coverage_line()
+    assert validation_coverage_line() == "Validation covers: id, name, amount, currency, region"
