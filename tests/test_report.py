@@ -290,24 +290,31 @@ def test_report_handles_an_all_accepted_feed_without_a_keyerror():
 
 def test_report_all_three_count_lines_come_from_the_summary_not_the_raw_input():
     # The load-bearing constraint: the renderer must PRESENT what summarise() reports,
-    # never re-derive it. Real input here is 2 accepted records (real total=2,
-    # accepted=2, rejected_count=0); the injected summary uses total=5, accepted=3, and
-    # -- deliberately NOT total-accepted (which would be 2) -- rejected_count=999, so a
-    # renderer that still computed `total - accepted` itself, instead of printing
-    # summary["rejected_count"] directly, would fail this. Each line is matched exactly
-    # (via _line_starting_with), not by substring: "Records read: 5" in text would also
-    # accept a corrupted "Records read: 51".
+    # never re-derive it -- byte for byte, not just numerically. Real input here is 2
+    # accepted records (real total=2, accepted=2, rejected_count=0); the injected summary
+    # uses total=5, accepted=3, and -- deliberately NOT total-accepted (which would be
+    # 2) -- rejected_count=999, so a renderer that still computed `total - accepted`
+    # itself, instead of printing summary["rejected_count"] directly, would fail this.
+    # The injected reason is deliberately mixed-case WITH leading/trailing spaces and
+    # not already title-cased: "zz-impossible-reason-xyz" (an earlier version of this
+    # test) is already all-lowercase, so a renderer applying reason.lower() -- or
+    # .upper() / .strip() / .title() -- before printing it would still pass. Every one
+    # of those four transformations changes this string, so all four are observable.
+    # Each line is matched exactly (via _line_starting_with / _footer_lines), not by
+    # substring: "Records read: 5" in text would also accept a corrupted "Records read: 51".
     clean2 = {**CLEAN, "id": "R-8002"}
     fake_summary = {
         "total": 5, "accepted": 3, "rejected_count": 999, "by_tag": {},
-        "rejection_reasons": [{"reason": "zz-impossible-reason-xyz", "count": 12}],
+        "rejection_reasons": [{"reason": "  Mixed Case REASON value  ", "count": 12}],
     }
     with mock.patch("src.report.summarise", return_value=fake_summary):
         text = render_report(records=[CLEAN, clean2])
     assert _line_starting_with(text, "Records read:") == "Records read: 5"
     assert _line_starting_with(text, "Records accepted:") == "Records accepted: 3"
     assert _line_starting_with(text, "Records rejected:") == "Records rejected: 999"
-    assert _footer_lines(text) == ["Rejected records", "----------------", "zz-impossible-reason-xyz: 12"]
+    assert _footer_lines(text) == [
+        "Rejected records", "----------------", "  Mixed Case REASON value  : 12",
+    ]
     # the real input's own counts, and the total-accepted arithmetic result, must not
     # leak through anywhere, as an exact line
     lines = text.splitlines()
