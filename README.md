@@ -31,3 +31,5 @@ git push --force origin <base-sha>:main
 ```
 
 See `tools/RESET.md`.
+
+# Preflight merge probe (T4 rep 6) - reverted immediately.
