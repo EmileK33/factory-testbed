@@ -7,6 +7,7 @@ import pytest
 from src.records import load_records
 from src.report import _escape_tag, _table, render_report, validation_coverage_line
 from src.validate import check_record
+from tools.write_golden import GOLDEN_PATH
 
 CLEAN = {
     "id": "R-8001",
@@ -22,6 +23,9 @@ CLEAN = {
 # doing so would make the comparison below tautological. Everything through the final
 # "Validation covers: ..." line, inclusive, must remain byte-for-byte identical: #247 may
 # only ever APPEND a footer after it, never change a line above it.
+#
+# #259 updated the "Net after fees" block (added a header row and a currency column) --
+# those seven lines below reflect that change; every other line is unchanged from before.
 PRE_FOOTER_TEXT = (
     "Settlement report\n=================\n\n"
     "id      name            region  amount  currency  tags\n"
@@ -34,8 +38,10 @@ PRE_FOOTER_TEXT = (
     "R-1007  Garnet Rail     EU         640  EUR       eu, rail\n"
     "R-1008  Halcyon Air     NA         720  USD       na, air\n\n"
     "Net after fees\n--------------\n"
-    "R-1001       995\nR-1002       403\nR-1003      9775\nR-1004       -15\n"
-    "R-1005      2313\nR-1007       519\nR-1008       659\n\n"
+    "id           net  currency\n"
+    "R-1001       995  EUR\nR-1002       403  USD\nR-1003      9775  JPY\n"
+    "R-1004       -15  USD\nR-1005      2313  USD\nR-1007       519  EUR\n"
+    "R-1008       659  USD\n\n"
     "Records read: 8\nRecords accepted: 7\nRecords rejected: 1\n\n"
     "Unlabelled records: Fennel Labs\n"
     "Total (USD): 5980.90\n"
@@ -45,12 +51,42 @@ PRE_FOOTER_TEXT = (
     "Validation covers: id, name, amount, currency, region\n"
 )
 
+# The exact target block from ISSUE #259, reproduced verbatim (not derived from
+# render_report()) so the pinning tests below cannot be made tautological by a bug that
+# corrupts both this constant and the renderer the same way.
+NET_AFTER_FEES_BLOCK = [
+    "Net after fees",
+    "--------------",
+    "id           net  currency",
+    "R-1001       995  EUR",
+    "R-1002       403  USD",
+    "R-1003      9775  JPY",
+    "R-1004       -15  USD",
+    "R-1005      2313  USD",
+    "R-1007       519  EUR",
+    "R-1008       659  USD",
+]
+
 
 def _line_starting_with(text, prefix):
     """The one line in *text* that starts with *prefix*, matched exactly (not a
     substring search) -- "Records read: 5" must not match a rendered "Records read: 51",
     which `"Records read: 5" in text` would silently accept."""
     return next(line for line in text.splitlines() if line.startswith(prefix))
+
+
+def _net_after_fees_lines(text):
+    """The 'Net after fees' block's own lines, from its header text to the blank line that
+    ends it, exactly -- used to pin the header, every row's net and currency, and their
+    order, rather than checking each value is merely present somewhere in the whole
+    report (a substring check on a formatted line has repeatedly let a wrong value pass
+    on this codebase)."""
+    lines = text.splitlines()
+    start = lines.index("Net after fees")
+    end = start
+    while lines[end] != "":
+        end += 1
+    return lines[start:end]
 
 
 def _footer_lines(text):
@@ -365,6 +401,51 @@ def test_report_footer_counts_agree_with_records_rejected_line():
     text = render_report()
     assert _line_starting_with(text, "Records rejected:") == "Records rejected: 1"
     assert _footer_lines(text) == ["Rejected records", "----------------", "missing id: 1"]
+
+
+def test_report_net_after_fees_block_has_header_and_each_rows_currency():
+    # Issue #259: two currencies (EUR, USD) and a negative net (the NA/USD record's net
+    # after its flat fee undercuts its tiny gross) in one injected record set, so a
+    # mutation that drops the currency column, swaps it for the region, hardcodes "USD",
+    # removes the header, or reverses the column order cannot hide behind a
+    # single-currency or all-positive fixture. Exact-lines equality, not a substring
+    # check: `"EUR" in text` would also pass with the currency in the wrong column, or
+    # attached to the wrong row.
+    records = [
+        {
+            "id": "R-9101",
+            "name": "Two Currency Co",
+            "amount": 1200,
+            "currency": "EUR",
+            "region": "EU",
+            "tags": "",
+        },
+        {
+            "id": "R-9102",
+            "name": "Negative Net Co",
+            "amount": 10,
+            "currency": "USD",
+            "region": "NA",
+            "tags": "",
+        },
+    ]
+    text = render_report(records=records)
+    assert _net_after_fees_lines(text) == [
+        "Net after fees",
+        "--------------",
+        "id           net  currency",
+        "R-9101       995  EUR",
+        "R-9102       -15  USD",
+    ]
+
+
+def test_committed_golden_artifact_net_after_fees_block_matches_issue_259_target():
+    # The committed artifact's block must equal ISSUE #259's exact target, byte for byte --
+    # NET_AFTER_FEES_BLOCK above is copied verbatim from the issue, not derived from
+    # render_report(), so this cannot be made tautological by a bug that corrupts both the
+    # renderer and this expectation the same way.
+    text = GOLDEN_PATH.read_text(encoding="utf-8")
+    assert _net_after_fees_lines(text) == NET_AFTER_FEES_BLOCK
 
 
 def test_validation_coverage_line_matches_the_real_render():
