@@ -3,7 +3,7 @@
 import pytest
 
 from src.records import load_records
-from src.report import _table, render_report
+from src.report import _escape_tag, _table, render_report
 from src.validate import check_record
 
 
@@ -92,8 +92,8 @@ def test_report_still_stringifies_a_non_tags_list_value(field):
 
 @pytest.mark.parametrize(
     "separator",
-    [chr(10), chr(0x85), chr(0x2028), chr(0x2029)],
-    ids=["LF", "NEL", "LS", "PS"],
+    [chr(0x0A), chr(0x0B), chr(0x0C), chr(0x0D), chr(0x1C), chr(0x1D), chr(0x1E), chr(0x85), chr(0x2028), chr(0x2029)],
+    ids=["LF", "VT", "FF", "CR", "FS", "GS", "RS", "NEL", "LS", "PS"],
 )
 def test_report_never_lets_a_tag_forge_an_extra_physical_row(separator):
     # A tag carrying a character str.splitlines() treats as a line break reaches _cell()
@@ -143,3 +143,58 @@ def test_report_escapes_a_line_separator_from_the_raw_feed_through_the_full_pipe
     # physical line, so the row itself stops containing its own tag.
     row_line = next(candidate for candidate in lines if candidate.startswith("R-9004 "))
     assert "forged row" in row_line
+
+
+@pytest.mark.parametrize(
+    "char",
+    [
+        chr(0x0A), chr(0x0B), chr(0x0C), chr(0x0D), chr(0x1C), chr(0x1D), chr(0x1E),
+        chr(0x85), chr(0x2028), chr(0x2029),
+        chr(0x00), chr(0x07),
+    ],
+    ids=["LF", "VT", "FF", "CR", "FS", "GS", "RS", "NEL", "LS", "PS", "NUL", "BEL"],
+)
+def test_report_escapes_every_control_or_line_break_character_in_a_tag(char):
+    # Reject half. The ten Unicode category Cc/Zl/Zp codepoints str.splitlines() treats as a line
+    # break, plus two more Cc control characters (NUL, BEL) that do not forge a row but still do
+    # not belong unescaped in a report cell -- _escape_tag() escapes by category, not by an
+    # enumerated list of line breaks, so a plain control character must be caught by the same rule.
+    tag = f"high{char}priority"
+    escaped = _escape_tag(tag)
+    assert char not in escaped
+    assert "high" in escaped
+    assert "priority" in escaped
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        chr(0x1F468) + chr(0x200D) + chr(0x1F469) + chr(0x200D) + chr(0x1F467),  # ZWJ family emoji
+        chr(0x2764) + chr(0xFE0F),  # heart + variation selector
+        chr(0x1F44D) + chr(0x1F3FD),  # thumbs up + medium skin tone modifier
+        "a" + chr(0xA0) + "b",  # non-breaking space
+        chr(0xE9),  # e with acute (non-ASCII letter)
+        "high  priority",  # internal double space (the column separator itself)
+    ],
+    ids=[
+        "zwj_family_emoji",
+        "emoji_variation_selector",
+        "emoji_skin_tone_modifier",
+        "nonbreaking_space",
+        "non_ascii_letter",
+        "internal_double_space",
+    ],
+)
+def test_report_leaves_legitimate_tag_content_unchanged(value):
+    # Accept half. A category-based escape that is tight enough to reject only Cc/Zl/Zp must still
+    # say yes to everything else: a join-control character (Cf, ZWJ) joining a compound emoji into
+    # one glyph, a combining mark (Mn, a variation selector or skin-tone modifier) attached to a
+    # base emoji, ordinary spacing (Zs, non-breaking space) that is not a line break, a non-ASCII
+    # letter, and a tag that itself contains the column separator (two spaces) -- none of these is
+    # a line break or a C0/C1 control character, so none should be touched. This enumeration is not
+    # exhaustive of every printable-but-unusual character that could appear in a tag (Cf format
+    # characters other than ZWJ, or other combining-mark sequences, are not separately covered) --
+    # it covers the specific classes named in review round 4, plus the column-separator case
+    # flagged as a design note (not fixed, per instruction) to confirm this escape does not
+    # incidentally interfere with it either.
+    assert _escape_tag(value) == value

@@ -6,6 +6,8 @@ byte-for-byte by ``tests/test_golden.py``.
 
 from __future__ import annotations
 
+import unicodedata
+
 from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
@@ -18,19 +20,28 @@ REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 RIGHT_ALIGNED = frozenset({"amount"})
 
 # parse_tags() does not filter or sanitise the feed's raw tag text (that is its own, separately
-# tracked, pre-existing gap -- not this module's to fix). A tag carrying a character str.isprintable()
-# rejects -- e.g. a line break -- would otherwise reach _cell() untouched. That is not just the
-# ASCII control range: str.splitlines() (which tools/write_golden.py's summarise_artifact() calls
-# on the rendered report) also breaks on U+0085 NEL, U+2028 LINE SEPARATOR and U+2029 PARAGRAPH
-# SEPARATOR, none of which "\x00-\x1f\x7f" would catch. Rather than enumerate line-break characters
-# one discovery at a time, escape by the property that actually matters: every character
-# str.isprintable() rejects (verified exhaustively over the full Unicode range to be exactly the
-# ten codepoints splitlines() treats as a break: 0x0a-0x0d, 0x1c-0x1e, 0x85, 0x2028, 0x2029) is
-# escaped, and every printable character -- letters, digits, space, punctuation, emoji -- passes
-# through unchanged. This is scoped to the tags cell only; every other REPORTED_FIELDS column is
-# untouched.
+# tracked, pre-existing gap -- not this module's to fix). A tag carrying a character
+# str.splitlines() treats as a line break -- e.g. "\n" -- would otherwise reach _cell() untouched
+# and forge an extra physical report row. That threat is not just the ASCII control range:
+# splitlines() (which tools/write_golden.py's summarise_artifact() calls on the rendered report)
+# also breaks on U+0085 NEL, U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR.
+#
+# Escaping by str.isprintable() (a prior version of this function) is NOT the right property: it
+# rejects 965,114 codepoints, not 10, and mangles legitimate tag content it has no business
+# touching -- a ZWJ-joined compound emoji comes apart into its individual parts, and a
+# non-breaking space gets escaped. Escaping by Unicode GENERAL CATEGORY is the property that
+# actually matches the threat: every one of the ten codepoints splitlines() treats as a break is in
+# category Cc (control), Zl (line separator) or Zp (paragraph separator) -- verified exhaustively
+# over the full Unicode range -- and escaping by that category set (67 codepoints total: the ten
+# row-forgers plus other C0/C1 control characters that likewise do not belong in a report cell)
+# leaves join-control characters (category Cf, e.g. ZWJ), marks (category Mn, e.g. variation
+# selectors) and ordinary spacing (category Zs, e.g. non-breaking space) untouched. This is scoped
+# to the tags cell only; every other REPORTED_FIELDS column is untouched.
+_ESCAPED_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+
+
 def _escape_char(char: str) -> str:
-    if char.isprintable():
+    if unicodedata.category(char) not in _ESCAPED_CATEGORIES:
         return char
     codepoint = ord(char)
     if codepoint <= 0xFF:
@@ -41,8 +52,8 @@ def _escape_char(char: str) -> str:
 
 
 def _escape_tag(tag: str) -> str:
-    """Escape non-printable characters in a single tag so it cannot forge a new physical report
-    row (or otherwise corrupt a terminal/file rendering of the report)."""
+    """Escape control/line-break characters in a single tag so it cannot forge a new physical
+    report row (or otherwise corrupt a terminal/file rendering of the report)."""
     return "".join(_escape_char(char) for char in tag)
 
 
