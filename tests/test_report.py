@@ -334,16 +334,30 @@ def test_report_footer_says_none_rejected_for_a_clean_feed():
 
 
 def test_report_footer_lists_multiple_reasons_each_on_its_own_line():
-    # Also pins the footer's ORDER: first-seen-in-the-feed order (r1, whose reason is
-    # "unknown currency", is processed before r2). No particular order is required by the
-    # issue, but leaving it unpinned lets a reversal (e.g. of summarise()'s reason_counts
-    # dict) pass silently -- see the matching order test in tests/test_counts.py for the
-    # summarise()-level pin of the same decision.
-    r1 = {**CLEAN, "id": "R-8003", "currency": "GBP"}
-    r2 = {**CLEAN, "id": "R-8004", "region": "LATAM"}
-    text = render_report(records=[r1, r2])
+    # Injected at the renderer level (like test_report_all_three_count_lines_come_from_
+    # the_summary_not_the_raw_input) so the reasons, their order, and their counts are
+    # all chosen to defeat plausible renderer bugs, not just whatever the real feed
+    # happens to produce:
+    #   - "zeta-reason" before "alpha-reason" is the REVERSE of alphabetical order, so a
+    #     renderer that sorts reasons (instead of presenting summarise()'s own order)
+    #     would print alpha-reason first and fail this. An earlier version of this test
+    #     used "unknown currency"/"unknown region", which are already alphabetical, so a
+    #     sorting bug was indistinguishable from correct behaviour.
+    #   - counts 7 and 3 are distinct, so a renderer that reuses one reason's count for
+    #     every line (e.g. always printing `reasons[0]['count']`) would print
+    #     "alpha-reason: 7" and fail this. An earlier version used two counts that both
+    #     happened to be 1, which such a bug could not have been distinguished from.
+    fake_summary = {
+        "total": 2, "accepted": 0, "rejected_count": 2, "by_tag": {},
+        "rejection_reasons": [
+            {"reason": "zeta-reason", "count": 7},
+            {"reason": "alpha-reason", "count": 3},
+        ],
+    }
+    with mock.patch("src.report.summarise", return_value=fake_summary):
+        text = render_report(records=[CLEAN])
     assert _footer_lines(text) == [
-        "Rejected records", "----------------", "unknown currency: 1", "unknown region: 1",
+        "Rejected records", "----------------", "zeta-reason: 7", "alpha-reason: 3",
     ]
 
 

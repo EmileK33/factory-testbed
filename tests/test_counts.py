@@ -4,6 +4,8 @@ Coupled to ``data/records.json``: a change to the feed moves these expectations
 and nothing else in the suite.
 """
 
+import unittest.mock as mock
+
 from src.records import load_records
 from src.summarise import summarise
 
@@ -129,6 +131,43 @@ def test_summarise_aggregates_two_records_with_the_same_reason():
     r2 = {**CLEAN, "id": "R-3010", "currency": "GBP"}
     counts = summarise([r1, r2])
     assert counts["rejection_reasons"] == [{"reason": "unknown currency", "count": 2}]
+
+
+def test_summarise_gives_each_reason_its_own_count_not_the_firsts():
+    # Found by a systematic mutation sweep, not by a reviewer: summarise()'s own
+    # rejection_reasons list comprehension could reuse one reason's count for every
+    # entry (e.g. `[{"reason": r, "count": first_count} for r in reason_counts]`) and
+    # every existing test would still pass, because they all used reasons that each
+    # occurred the same number of times (1 and 1, or a single reason with count 2).
+    # Here the first-seen reason occurs once and the second occurs twice, so reusing
+    # the first reason's count for the second entry is observable.
+    unknown_currency = {**CLEAN, "id": "R-3017", "currency": "GBP"}
+    unknown_region_1 = {**CLEAN, "id": "R-3018", "region": "LATAM"}
+    unknown_region_2 = {**CLEAN, "id": "R-3019", "region": "LATAM"}
+    counts = summarise([unknown_currency, unknown_region_1, unknown_region_2])
+    assert counts["rejection_reasons"] == [
+        {"reason": "unknown currency", "count": 1},
+        {"reason": "unknown region", "count": 2},
+    ]
+
+
+def test_summarise_carries_a_mixed_case_reason_from_validation_unchanged():
+    # The validator -> summary boundary: summarise() must carry whatever reject_reason()
+    # (the feed contract's decision) returns VERBATIM, never transform its case. Every
+    # reason string reject_reason() actually returns today is a fixed, all-lowercase
+    # literal ("missing id", "unknown region", ...), so no real record can exercise a
+    # case-sensitivity bug at this specific boundary -- the mixed-case injected-summary
+    # tests in tests/test_report.py inject a step further downstream (at the renderer,
+    # via a fake summary dict) and would not catch summarise() itself lowercasing or
+    # uppercasing what reject_reason() gave it. Reached here by patching reject_reason()
+    # as summarise() itself looks it up (`src.summarise.reject_reason`), not
+    # `src.validate.reject_reason` -- check_record() keeps its own, unpatched reference,
+    # so accept/reject is still decided by the real validation logic; only the reason
+    # STRING that summarise() records for an already-rejected record is faked.
+    invalid = {**CLEAN, "id": "R-3013", "currency": "GBP"}  # genuinely rejected by check_record()
+    with mock.patch("src.summarise.reject_reason", return_value="Mixed CASE Reason"):
+        counts = summarise([invalid])
+    assert counts["rejection_reasons"] == [{"reason": "Mixed CASE Reason", "count": 1}]
 
 
 def test_summarise_orders_rejection_reasons_by_first_seen_in_the_feed():
