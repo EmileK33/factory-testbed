@@ -51,71 +51,48 @@ def _write_feed(tmp_path, rows):
     return feed
 
 
-def test_load_records_rejects_non_dict_scalar_at_index_zero(tmp_path):
-    feed = _write_feed(tmp_path, [42])
+# Each entry is (shape id, the row itself). `dict()` would raise some
+# inconsistent TypeError/ValueError for the first four (int/none/bool/float
+# are never iterable, a non-empty string is the wrong length), and would
+# *silently* convert the rest into a fabricated record -- e.g. the empty
+# string/list vacuously, a list of [key, value] pairs, a list containing a
+# two-key dict, and a pair whose first item is unhashable (which, unguarded,
+# raises `TypeError: unhashable type` deep inside `dict()`, not the loader's
+# own ValueError). The fix rejects every one of them, uniformly, before
+# `dict()` is ever called.
+NON_DICT_SHAPES = [
+    ("int", 42),
+    ("none", None),
+    ("bool", True),
+    ("float", 3.14),
+    ("non_empty_string", "bad"),
+    ("empty_string", ""),
+    ("empty_list", []),
+    ("list_of_pairs", [["id", "X"]]),
+    ("list_containing_dict", [{"id": 1, "name": 2}]),
+    ("pair_with_unhashable_key", [[[], 1]]),
+]
+
+
+@pytest.mark.parametrize("position", ["zero", "nonzero"])
+@pytest.mark.parametrize("shape_id,row", NON_DICT_SHAPES, ids=[s[0] for s in NON_DICT_SHAPES])
+def test_load_records_rejects_non_dict_row(tmp_path, position, shape_id, row):
+    valid = {"id": "V", "name": "Valid"}
+    if position == "zero":
+        rows = [row]
+        index = 0
+    else:
+        rows = [valid, valid, row]
+        index = 2
+    feed = _write_feed(tmp_path, rows)
+
     with pytest.raises(ValueError) as excinfo:
         load_records(feed)
-    assert str(feed) in str(excinfo.value)
-    assert "index 0" in str(excinfo.value)
 
-
-def test_load_records_rejects_non_dict_scalar_at_nonzero_index(tmp_path):
-    valid = {"id": "X-1", "name": "One"}
-    feed = _write_feed(tmp_path, [valid, valid, None])
-    with pytest.raises(ValueError) as excinfo:
-        load_records(feed)
-    assert "index 2" in str(excinfo.value)
-
-
-def test_load_records_rejects_empty_string_element(tmp_path):
-    feed = _write_feed(tmp_path, [""])
-    with pytest.raises(ValueError) as excinfo:
-        load_records(feed)
-    assert "index 0" in str(excinfo.value)
-
-
-def test_load_records_rejects_empty_list_element(tmp_path):
-    valid = {"id": "X-1", "name": "One"}
-    feed = _write_feed(tmp_path, [valid, []])
-    with pytest.raises(ValueError) as excinfo:
-        load_records(feed)
-    assert "index 1" in str(excinfo.value)
-
-
-def test_load_records_rejects_list_of_pairs_at_index_zero(tmp_path):
-    # A row that is a list of [key, value] pairs -- dict() would silently
-    # convert this to {"id": "X"}, a plausible-looking fabricated record.
-    feed = _write_feed(tmp_path, [[["id", "X"]]])
-    with pytest.raises(ValueError) as excinfo:
-        load_records(feed)
-    assert str(feed) in str(excinfo.value)
-    assert "index 0" in str(excinfo.value)
-
-
-def test_load_records_rejects_list_of_pairs_at_nonzero_index(tmp_path):
-    valid = {"id": "X-1", "name": "One"}
-    feed = _write_feed(tmp_path, [valid, valid, [["id", "X"]]])
-    with pytest.raises(ValueError) as excinfo:
-        load_records(feed)
-    assert "index 2" in str(excinfo.value)
-
-
-def test_load_records_rejects_list_containing_dict_at_index_zero(tmp_path):
-    # A row that is a list containing one 2-key dict -- dict() would
-    # silently convert this using the dict's own keys as a (key, value) pair.
-    feed = _write_feed(tmp_path, [[{"id": 1, "name": 2}]])
-    with pytest.raises(ValueError) as excinfo:
-        load_records(feed)
-    assert str(feed) in str(excinfo.value)
-    assert "index 0" in str(excinfo.value)
-
-
-def test_load_records_rejects_list_containing_dict_at_nonzero_index(tmp_path):
-    valid = {"id": "X-1", "name": "One"}
-    feed = _write_feed(tmp_path, [valid, [{"id": 1, "name": 2}]])
-    with pytest.raises(ValueError) as excinfo:
-        load_records(feed)
-    assert "index 1" in str(excinfo.value)
+    # Exact-equality on the full message -- not a substring check -- so a
+    # mutant that multiplies the index, swaps in a different path, or drops
+    # either the path or the index cannot slip through.
+    assert str(excinfo.value) == f"{feed}: record at index {index} is not a JSON object"
 
 
 def test_load_records_returns_exact_copy_of_valid_feed(tmp_path):
