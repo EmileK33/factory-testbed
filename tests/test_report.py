@@ -3,7 +3,7 @@
 import pytest
 
 from src.records import load_records
-from src.report import render_report
+from src.report import _table, render_report
 from src.validate import check_record
 
 
@@ -88,3 +88,25 @@ def test_report_still_stringifies_a_non_tags_list_value(field):
     text = render_report(records=[record])
     row_line = text.splitlines()[5]
     assert "[1]" in row_line
+
+
+def test_report_never_lets_a_tag_forge_an_extra_physical_row():
+    # A tag carrying a raw line break reaches _cell() unfiltered by parse_tags() -- a pre-existing
+    # gap in src/parse.py that is tracked separately and deliberately not fixed here. _table()
+    # must still guarantee exactly one physical output line per logical row it returns: joining
+    # its lines with "\n" and splitting again must report the same count that _table() itself
+    # returned. Without escaping, a "\n" embedded in a tag turns one logical row into two physical
+    # lines, forging what looks like an extra report row.
+    rows = [
+        {
+            "id": "R-9003",
+            "name": "Newline Co",
+            "region": "NA",
+            "amount": 75,
+            "currency": "USD",
+            "tags": ["high\nforged row, y"],
+        }
+    ]
+    logical_lines = _table(rows)
+    physical_lines = "\n".join(logical_lines).split("\n")
+    assert len(physical_lines) == len(logical_lines)
