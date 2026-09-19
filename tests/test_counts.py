@@ -20,24 +20,27 @@ CLEAN = {
 def test_summarise_counts_the_feed_it_was_given():
     counts = summarise(load_records())
     assert counts["total"] == len(load_records())
-    assert counts["accepted"] == 5
-    assert counts["rejected"] == ["<unlabelled>", "R-1007", "R-1008"]
-    # Hand-derived from check_record()'s "tags" list for the 5 accepted records
-    # in the committed data/records.json (R-1001..R-1005). This literal is NOT
-    # computed by calling summarise()/check_record() here -- doing so would make
-    # the assertion tautological. If data/records.json's accepted rows change,
+    assert counts["accepted"] == 7
+    assert counts["rejected"] == ["<unlabelled>"]
+    # Hand-derived from check_record()'s "tags" list for the 7 accepted records
+    # in the committed data/records.json (R-1001..R-1005, R-1007, R-1008; the
+    # unlabelled row is the sole rejection). This literal is NOT computed by
+    # calling summarise()/check_record() here -- doing so would make the
+    # assertion tautological. If data/records.json's accepted rows change,
     # this dict must be re-derived BY HAND from the new accepted set, not
     # patched piecemeal.
     assert counts["by_tag"] == {
-        "eu": 2,
+        "eu": 3,
         "high": 1,
         "priority": 1,
         "settled": 2,
-        "na": 2,
+        "na": 3,
         "apac": 1,
         "bulk": 1,
         "small": 1,
         "crossborder": 1,
+        "rail": 1,
+        "air": 1,
     }
 
 
