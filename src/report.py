@@ -6,6 +6,8 @@ byte-for-byte by ``tests/test_golden.py``.
 
 from __future__ import annotations
 
+import unicodedata
+
 from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
@@ -13,9 +15,46 @@ from src.records import load_records
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
-REPORTED_FIELDS = ("id", "name", "region", "amount", "currency")
+REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
 
 RIGHT_ALIGNED = frozenset({"amount"})
+
+# parse_tags() does not filter or sanitise the feed's raw tag text (that is its own, separately
+# tracked, pre-existing gap -- not this module's to fix). A tag carrying a character
+# str.splitlines() treats as a line break -- e.g. "\n" -- would otherwise reach _cell() untouched
+# and forge an extra physical report row. That threat is not just the ASCII control range:
+# splitlines() (which tools/write_golden.py's summarise_artifact() calls on the rendered report)
+# also breaks on U+0085 NEL, U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR.
+#
+# Escaping by str.isprintable() (a prior version of this function) is NOT the right property: it
+# rejects 965,114 codepoints, not 10, and mangles legitimate tag content it has no business
+# touching -- a ZWJ-joined compound emoji comes apart into its individual parts, and a
+# non-breaking space gets escaped. Escaping by Unicode GENERAL CATEGORY is the property that
+# actually matches the threat: every one of the ten codepoints splitlines() treats as a break is in
+# category Cc (control), Zl (line separator) or Zp (paragraph separator) -- verified exhaustively
+# over the full Unicode range -- and escaping by that category set (67 codepoints total: the ten
+# row-forgers plus other C0/C1 control characters that likewise do not belong in a report cell)
+# leaves join-control characters (category Cf, e.g. ZWJ), marks (category Mn, e.g. variation
+# selectors) and ordinary spacing (category Zs, e.g. non-breaking space) untouched. This is scoped
+# to the tags cell only; every other REPORTED_FIELDS column is untouched.
+_ESCAPED_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+
+
+def _escape_char(char: str) -> str:
+    if unicodedata.category(char) not in _ESCAPED_CATEGORIES:
+        return char
+    codepoint = ord(char)
+    if codepoint <= 0xFF:
+        return f"\\x{codepoint:02x}"
+    if codepoint <= 0xFFFF:
+        return f"\\u{codepoint:04x}"
+    return f"\\U{codepoint:08x}"
+
+
+def _escape_tag(tag: str) -> str:
+    """Escape control/line-break characters in a single tag so it cannot forge a new physical
+    report row (or otherwise corrupt a terminal/file rendering of the report)."""
+    return "".join(_escape_char(char) for char in tag)
 
 
 # Deliberately not imported from src.validate. That predicate decides what the
@@ -29,6 +68,8 @@ def _missing(value: object) -> bool:
 
 def _cell(row: dict, field: str) -> str:
     value = row.get(field)
+    if field == "tags" and isinstance(value, list):
+        return ", ".join(_escape_tag(tag) for tag in value) if value else "-"
     return "-" if _missing(value) else str(value)
 
 
@@ -87,7 +128,8 @@ def render_report(records: list[dict] | None = None) -> str:
     lines.append(f"Total (USD): {_money(total_cents)}")
     lines.append("Amounts are shown in USD.")
     lines.append(
-        f"All {len(REPORTED_FIELDS)} reported fields are checked by the validation rules."
+        f"{len(validate.VALIDATED_FIELDS)} of {len(REPORTED_FIELDS)} "
+        "reported fields are checked by the validation rules."
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
