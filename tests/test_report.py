@@ -1,10 +1,49 @@
 """Tests for the rendered settlement report."""
 
+import unittest.mock as mock
+
 import pytest
 
 from src.records import load_records
-from src.report import _escape_tag, _table, render_report
+from src.report import _escape_tag, _table, render_report, validation_coverage_line
 from src.validate import check_record
+
+CLEAN = {
+    "id": "R-8001",
+    "name": "Report Test Co",
+    "amount": 500,
+    "currency": "USD",
+    "region": "NA",
+    "tags": "na,test",
+}
+
+# Hand-captured from artifacts/report.golden.txt as committed on main BEFORE #247 (i.e.
+# before the "Rejected records" footer existed), NOT derived from render_report() itself --
+# doing so would make the comparison below tautological. Everything through the final
+# "Validation covers: ..." line, inclusive, must remain byte-for-byte identical: #247 may
+# only ever APPEND a footer after it, never change a line above it.
+PRE_FOOTER_TEXT = (
+    "Settlement report\n=================\n\n"
+    "id      name            region  amount  currency  tags\n"
+    "------  --------------  ------  ------  --------  ---------------------------\n"
+    "R-1001  Aster Holdings  EU        1200  EUR       eu, high, priority, settled\n"
+    "R-1002  Borel Systems   NA         450  USD       na, settled\n"
+    "R-1003  Chandra Foods   APAC      9800  JPY       apac, bulk\n"
+    "R-1004  Delta Freight   NA          10  USD       na, small\n"
+    "R-1005  Eiger Metals    EU        2750  USD       eu, crossborder\n"
+    "R-1007  Garnet Rail     EU         640  EUR       eu, rail\n"
+    "R-1008  Halcyon Air     NA         720  USD       na, air\n\n"
+    "Net after fees\n--------------\n"
+    "R-1001       995\nR-1002       403\nR-1003      9775\nR-1004       -15\n"
+    "R-1005      2313\nR-1007       519\nR-1008       659\n\n"
+    "Records read: 8\nRecords accepted: 7\nRecords rejected: 1\n\n"
+    "Unlabelled records: Fennel Labs\n"
+    "Total (USD): 5980.90\n"
+    "Amounts are shown in USD.\n"
+    "5 of 6 reported fields are checked by the validation rules.\n"
+    "Settlement pairs in force: EU/EUR, NA/USD, APAC/JPY\n"
+    "Validation covers: id, name, amount, currency, region\n"
+)
 
 
 def test_report_lists_every_accepted_record():
@@ -198,3 +237,89 @@ def test_report_leaves_legitimate_tag_content_unchanged(value):
     # flagged as a design note (not fixed, per instruction) to confirm this escape does not
     # incidentally interfere with it either.
     assert _escape_tag(value) == value
+
+
+def test_report_body_above_the_footer_is_unchanged():
+    assert render_report().startswith(PRE_FOOTER_TEXT)
+
+
+def test_report_footer_dashes_match_the_header_length():
+    text = render_report()
+    idx = text.index("Rejected records\n")
+    header_line, dash_line = text[idx:].splitlines()[:2]
+    assert dash_line == "-" * len(header_line)
+    assert len(dash_line) == 16
+
+
+def test_report_handles_an_empty_feed_without_a_keyerror():
+    # The footer's "Records rejected" line must never read summary["rejected"] (a
+    # pre-existing, deliberately-untouched conditional key, absent when nothing is
+    # rejected) -- doing so would KeyError on exactly this input.
+    text = render_report(records=[])
+    assert "Records read: 0" in text
+    assert "Records accepted: 0" in text
+    assert "Records rejected: 0" in text
+    assert text.rstrip("\n").endswith("Rejected records\n----------------\nNone rejected.")
+
+
+def test_report_handles_an_all_accepted_feed_without_a_keyerror():
+    # Same KeyError risk as the empty-feed case above, but with a non-empty feed where
+    # everything is accepted -- "rejected" is still absent from the summary here.
+    clean_feed = [{**CLEAN, "id": f"X-{i}"} for i in range(7)]
+    text = render_report(records=clean_feed)
+    assert "Records rejected: 0" in text
+    assert text.rstrip("\n").endswith("Rejected records\n----------------\nNone rejected.")
+
+
+def test_report_all_three_count_lines_come_from_the_summary_not_the_raw_input():
+    # The load-bearing constraint: the renderer must PRESENT what summarise() reports,
+    # never re-derive it. Real input here is 2 accepted records (real total=2,
+    # accepted=2, rejected=0); the injected summary uses total=5, accepted=3 (implied
+    # rejected=2) -- every one of the three numbers differs from what the real input
+    # would produce, so a renderer reading len(raw)/len(accepted) directly for any of
+    # the three lines, instead of summary, would fail this.
+    clean2 = {**CLEAN, "id": "R-8002"}
+    fake_summary = {
+        "total": 5, "accepted": 3, "by_tag": {},
+        "rejection_reasons": [{"reason": "zz-impossible-reason-xyz", "count": 999}],
+    }
+    with mock.patch("src.report.summarise", return_value=fake_summary):
+        text = render_report(records=[CLEAN, clean2])
+    assert "Records read: 5" in text
+    assert "Records accepted: 3" in text
+    assert "Records rejected: 2" in text
+    assert "zz-impossible-reason-xyz: 999" in text
+    assert "None rejected." not in text
+    # the real input's own counts must not leak through anywhere
+    assert "Records read: 2" not in text
+    assert "Records rejected: 0" not in text
+
+
+def test_report_footer_lists_the_reason_and_count():
+    text = render_report()
+    assert text.rstrip("\n").endswith("Rejected records\n----------------\nmissing id: 1")
+
+
+def test_report_footer_says_none_rejected_for_a_clean_feed():
+    text = render_report(records=[CLEAN])
+    assert text.rstrip("\n").endswith("Rejected records\n----------------\nNone rejected.")
+
+
+def test_report_footer_lists_multiple_reasons_each_on_its_own_line():
+    r1 = {**CLEAN, "id": "R-8003", "currency": "GBP"}
+    r2 = {**CLEAN, "id": "R-8004", "region": "LATAM"}
+    text = render_report(records=[r1, r2])
+    assert "unknown currency: 1" in text
+    assert "unknown region: 1" in text
+
+
+def test_report_footer_counts_agree_with_records_rejected_line():
+    text = render_report()
+    assert "Records rejected: 1" in text
+    assert "missing id: 1" in text
+
+
+def test_validation_coverage_line_matches_the_real_render():
+    text = render_report()
+    assert validation_coverage_line() in text
+    assert validation_coverage_line() == "Validation covers: id, name, amount, currency, region"

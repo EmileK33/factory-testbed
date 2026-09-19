@@ -99,3 +99,30 @@ def test_by_tag_preserves_tag_case_as_check_record_returns_it():
     lower = {**CLEAN, "id": "R-3007", "tags": "eu"}
     counts = summarise([upper, lower])
     assert counts["by_tag"] == {"EU": 1, "eu": 1}
+
+
+def test_summarise_reports_the_rejection_reason_for_the_shipped_feed():
+    counts = summarise(load_records())
+    assert counts["rejection_reasons"] == [{"reason": "missing id", "count": 1}]
+
+
+def test_summarise_rejection_reasons_empty_when_nothing_rejected():
+    # "rejection_reasons" is always present, unlike the pre-existing, deliberately
+    # untouched conditional "rejected" key above -- new callers must not have to
+    # special-case a missing key the way that one requires.
+    counts = summarise([CLEAN])
+    assert counts["rejection_reasons"] == []
+
+
+def test_summarise_counts_a_multi_reason_record_once():
+    record = {**CLEAN, "amount": -5}
+    del record["id"]
+    counts = summarise([record])
+    assert counts["rejection_reasons"] == [{"reason": "missing id", "count": 1}]
+
+
+def test_summarise_aggregates_two_records_with_the_same_reason():
+    r1 = {**CLEAN, "id": "R-3009", "currency": "GBP"}
+    r2 = {**CLEAN, "id": "R-3010", "currency": "GBP"}
+    counts = summarise([r1, r2])
+    assert counts["rejection_reasons"] == [{"reason": "unknown currency", "count": 2}]

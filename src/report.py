@@ -12,6 +12,7 @@ from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
 from src.records import load_records
+from src.summarise import summarise
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
@@ -97,12 +98,43 @@ def _money(cents: int) -> str:
     return f"{sign}{cents // 100}.{cents % 100:02d}"
 
 
+def validation_coverage_line() -> str:
+    """The report's validation-coverage line, e.g. for release-note tooling.
+
+    A single source of truth for this exact text -- render_report() below
+    calls it too, rather than each formatting ``VALIDATED_FIELDS`` on its
+    own -- kept as a dedicated function (not a shared constant) specifically
+    so callers outside this module (tools/write_golden.py) never need to
+    parse the rendered report to recover this fact. Parsing was considered
+    and rejected: render_report() prints a record's ``name`` (and ``id``)
+    completely unescaped -- a separate, pre-existing, out-of-scope gap; only
+    the ``tags`` column is escaped against control/line-break characters --
+    so a record can carry a ``name`` containing literal newlines and inject
+    an entire extra report line anywhere earlier in the output, including
+    one that starts with this exact prefix. This function sidesteps that
+    whole class of risk by never reading rendered text at all.
+    """
+    return f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}"
+
+
 def render_report(records: list[dict] | None = None) -> str:
     """Return the settlement report for *records* (defaults to the live feed)."""
     raw = load_records() if records is None else records
 
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
-    rejected = len(raw) - len(accepted)
+    # The pipeline's own accounting, not a second one derived here: report.py must not
+    # recompute how many records were rejected or why -- that is summarise()'s job, backed
+    # by src.validate.reject_reason(). Using it for the counts below too (not only the new
+    # footer) is what keeps this function from re-introducing the two-place drift the
+    # footer's own load-bearing constraint warns about. "total" and "accepted" are the two
+    # keys summarise() ALWAYS sets (unlike "rejected", which is a pre-existing conditional
+    # key -- present only when non-empty); the rejected count below is deliberately
+    # `summary["total"] - summary["accepted"]`, never `len(summary["rejected"])` or
+    # `summary["rejected"]` in any form, so it cannot KeyError on an empty feed or an
+    # all-accepted one. Note this does mean every record's validation predicate runs a
+    # second time here (accepted() above already ran it once): still linear (O(n), not
+    # worse), just not free -- not something this change tries to optimise away.
+    summary = summarise(raw)
 
     lines = ["Settlement report", "=================", ""]
     lines.extend(_table(accepted))
@@ -116,9 +148,9 @@ def render_report(records: list[dict] | None = None) -> str:
 
     total_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)
 
-    lines.append(f"Records read: {len(raw)}")
-    lines.append(f"Records accepted: {len(accepted)}")
-    lines.append(f"Records rejected: {rejected}")
+    lines.append(f"Records read: {summary['total']}")
+    lines.append(f"Records accepted: {summary['accepted']}")
+    lines.append(f"Records rejected: {summary['total'] - summary['accepted']}")
     lines.append("")
 
     unlabelled = [row.get("name", "?") for row in raw if _missing(row.get("id"))]
@@ -133,6 +165,15 @@ def render_report(records: list[dict] | None = None) -> str:
     )
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
-    lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
+    lines.append(validation_coverage_line())
+
+    lines.append("")
+    lines.append("Rejected records")
+    lines.append("----------------")
+    reasons = summary["rejection_reasons"]
+    if reasons:
+        lines.extend(f"{entry['reason']}: {entry['count']}" for entry in reasons)
+    else:
+        lines.append("None rejected.")
 
     return "\n".join(lines) + "\n"
