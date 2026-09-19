@@ -31,3 +31,5 @@ git push --force origin <base-sha>:main
 ```
 
 See `tools/RESET.md`.
+
+<!-- B12 merge-gate probe (T4 rep 6). Never merged. -->
