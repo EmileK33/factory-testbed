@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from src import validate
+from src import report, validate
 from src.records import load_records
 from src.report import _cell, render_report
 from src.validate import check_record
@@ -72,3 +72,13 @@ def test_footer_states_the_true_validated_count():
 def test_tags_are_not_validated():
     assert "tags" not in validate.VALIDATED_FIELDS
     assert "Validation covers: id, name, amount, currency, region" in _fixture_lines()
+
+
+def test_footer_count_is_derived_from_the_two_field_lists(monkeypatch):
+    # Dropping a reported field must drop it from both numbers; a count taken
+    # from len(VALIDATED_FIELDS) alone would still say 5.
+    monkeypatch.setattr(
+        report, "REPORTED_FIELDS", ("id", "name", "region", "amount", "tags")
+    )
+    lines = _fixture_lines()
+    assert "4 of 5 reported fields are checked by the validation rules." in lines
