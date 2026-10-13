@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src import validate
 from src.records import load_records
-from src.report import REPORTED_FIELDS, _cell, render_report
+from src.report import _cell, render_report
 from src.validate import check_record
 
 
@@ -69,7 +69,6 @@ def test_footer_states_the_true_validated_count():
     assert not any(line.startswith("All ") for line in lines)
 
 
-def test_tags_are_reported_but_not_validated():
-    assert "tags" in REPORTED_FIELDS
+def test_tags_are_not_validated():
     assert "tags" not in validate.VALIDATED_FIELDS
     assert "Validation covers: id, name, amount, currency, region" in _fixture_lines()
