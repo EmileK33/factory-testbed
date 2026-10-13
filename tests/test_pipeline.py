@@ -23,18 +23,20 @@ def test_apply_fees_charges_the_regional_handling_rate():
 
 
 @pytest.mark.parametrize(
-    ("region", "amount", "fee"),
+    ("region", "amount", "handling"),
     [
-        ("EU", 1000, 175),
-        ("NA", 1000, 75),
-        ("APAC", 1000, 25),
-        ("XX", 1000, 25),
-        ("EU", 0, 25),
-        ("NA", 999, 25 + 49),
-        ("NA", -60, 22),
+        ("EU", 1000, 150),
+        ("NA", 1000, 50),
+        ("APAC", 1000, 0),
+        ("XX", 1000, 0),
+        ("EU", 0, 0),
+        ("NA", 999, 49),
+        ("NA", -60, -3),
+        ("NA", -61, -4),
     ],
 )
-def test_fee_for_splits_into_flat_and_regional_handling(region, amount, fee):
+def test_fee_for_splits_into_flat_and_regional_handling(region, amount, handling):
     record = {"id": "R-9", "amount": amount, "region": region}
-    assert fee_for(record) == fee
-    assert _flat_component(record) + _handling_component(record) == fee
+    assert _flat_component(record) == 25
+    assert _handling_component(record) == handling
+    assert fee_for(record) == 25 + handling
