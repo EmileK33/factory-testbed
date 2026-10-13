@@ -5,6 +5,6 @@
   {"id": "R-1004", "name": "Delta Freight", "amount": 10, "currency": "USD", "region": "NA", "tags": "na,small", "status": "open"},
   {"id": "R-1005", "name": "Eiger Metals", "amount": 2750, "currency": "USD", "region": "EU", "tags": "eu,crossborder", "status": "open"},
   {"name": "Fennel Labs", "amount": 300, "currency": "EUR", "region": "EU", "tags": "eu,unlabelled", "status": "open"},
-  {"id": "R-1007", "name": "Garnet Rail", "amount": 640, "currency": "GBP", "region": "EU", "tags": "eu,rail", "status": "open"},
-  {"id": "R-1008", "name": "Halcyon Air", "amount": "n/a", "currency": "USD", "region": "NA", "tags": "na,air", "status": "open"}
+  {"id": "R-1007", "name": "Garnet Rail", "amount": 640, "currency": "EUR", "region": "EU", "tags": "eu,rail", "status": "open"},
+  {"id": "R-1008", "name": "Halcyon Air", "amount": 720, "currency": "USD", "region": "NA", "tags": "na,air", "status": "open"}
 ]
