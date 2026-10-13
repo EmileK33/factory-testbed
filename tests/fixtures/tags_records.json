@@ -1,0 +1,5 @@
+[
+  {"id": "R-9001", "name": "Quoted Tags Ltd", "amount": 100, "currency": "EUR", "region": "EU", "tags": "eu,\"high,priority\",settled"},
+  {"id": "R-9002", "name": "Empty Tags Ltd", "amount": 200, "currency": "USD", "region": "NA", "tags": ""},
+  {"id": "R-9003", "name": "Absent Tags Ltd", "amount": 300, "currency": "JPY", "region": "APAC"}
+]
