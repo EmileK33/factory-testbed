@@ -40,3 +40,9 @@ def test_fee_for_splits_into_flat_and_regional_handling(region, amount, handling
     assert _flat_component(record) == 25
     assert _handling_component(record) == handling
     assert fee_for(record) == 25 + handling
+
+
+def test_fee_for_returns_the_sum_of_its_two_components(monkeypatch):
+    monkeypatch.setattr("src.normalise._flat_component", lambda record: 7)
+    monkeypatch.setattr("src.normalise._handling_component", lambda record: 300)
+    assert fee_for({"id": "R-9", "amount": 1000, "region": "EU"}) == 307
