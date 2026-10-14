@@ -43,3 +43,47 @@ def test_load_records_returns_independent_copies():
 
 def test_load_records_keeps_the_row_with_no_id():
     assert any("id" not in record for record in load_records())
+
+
+BAD_ELEMENTS = [
+    pytest.param(7, id="int"),
+    pytest.param(1.5, id="float"),
+    pytest.param(True, id="bool"),
+    pytest.param(None, id="null"),
+    pytest.param("ab", id="str-ab"),
+    pytest.param("", id="str-empty"),
+    pytest.param([], id="list-empty"),
+    pytest.param(["ab"], id="list-ab"),
+    pytest.param([["a", 1]], id="list-pairs"),
+    pytest.param([1, 2, 3], id="list-three"),
+]
+
+
+@pytest.mark.parametrize("bad", BAD_ELEMENTS)
+def test_load_records_names_the_file_and_index_of_a_non_object_element(tmp_path, bad):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{"id": "X-1"}, bad]), encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        load_records(feed)
+    assert str(caught.value) == (
+        f"{feed}: element at index 1 must be a JSON object, got {type(bad).__name__}"
+    )
+
+
+def test_load_records_names_index_zero_for_a_bad_first_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps(["ab", {"id": "X-1"}]), encoding="utf-8")
+    with pytest.raises(ValueError, match="element at index 0 must be a JSON object, got str"):
+        load_records(feed)
+
+
+def test_load_records_accepts_an_empty_object_element(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([{}]), encoding="utf-8")
+    assert load_records(feed) == [{}]
+
+
+def test_load_records_accepts_an_empty_feed(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text(json.dumps([]), encoding="utf-8")
+    assert load_records(feed) == []
