@@ -82,3 +82,83 @@ def test_footer_count_is_derived_from_the_two_field_lists(monkeypatch):
     )
     lines = _fixture_lines()
     assert "4 of 5 reported fields are checked by the validation rules." in lines
+
+
+# --- rejection footer (#272) --------------------------------------------------
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def _report_lines(name: str) -> list[str]:
+    records = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+    return render_report(records).splitlines()
+
+
+def test_footer_on_the_live_feed_closes_the_report():
+    assert render_report().splitlines()[-4:] == [
+        "",
+        "Rejections by reason",
+        "--------------------",
+        "missing a required field: 1",
+    ]
+
+
+def test_footer_lists_each_reason_once_with_its_count():
+    lines = _report_lines("rejections_records.json")
+    assert lines[-8:] == [
+        "Rejections by reason",
+        "--------------------",
+        "not a record: 1",
+        "missing a required field: 2",
+        "region not recognised: 2",
+        "currency not recognised: 1",
+        "amount is not an integer: 2",
+        "amount is negative: 1",
+    ]
+    assert lines[-9] == ""
+
+
+def test_footer_counts_sum_to_records_rejected():
+    lines = _report_lines("rejections_records.json")
+    rejected = int(next(x for x in lines if x.startswith("Records rejected: ")).split(": ")[1])
+    start = lines.index("Rejections by reason") + 2
+    assert rejected == 9
+    assert sum(int(x.rsplit(": ", 1)[1]) for x in lines[start:]) == rejected
+
+
+def test_footer_says_so_when_nothing_was_rejected():
+    lines = _report_lines("no_rejections_records.json")
+    assert lines[-3:] == ["Rejections by reason", "--------------------", "No records were rejected."]
+    assert "Records rejected: 0" in lines
+
+
+def test_a_pair_outside_allowed_pairs_is_accepted_not_a_footer_reason():
+    lines = _report_lines("rejections_records.json")
+    assert any(x.startswith("M2 ") and "EU" in x and "USD" in x for x in lines)
+
+
+def test_footer_presents_the_summary_and_derives_nothing(monkeypatch):
+    # Values chosen to differ from what the 2-record fixture would give itself.
+    fake = {"total": 9, "accepted": 4, "rejected": ["a", "b", "c", "d", "e"],
+            "rejection_reasons": {"negative_amount": 2}}
+    monkeypatch.setattr(report, "summarise", lambda raw: fake)
+    lines = render_report(json.loads((FIXTURES / "no_rejections_records.json").read_text(encoding="utf-8"))).splitlines()
+    assert lines[-1] == "amount is negative: 2"
+    assert "Records read: 9" in lines
+    assert "Records accepted: 4" in lines
+    assert "Records rejected: 5" in lines
+
+
+def test_footer_prints_a_reason_code_the_table_does_not_list(monkeypatch):
+    import src.summarise as summarise_module
+
+    real = summarise_module.rejection_reason
+    monkeypatch.setattr(
+        summarise_module,
+        "rejection_reason",
+        lambda record: "unlisted" if record == "garbage" else real(record),
+    )
+    lines = _report_lines("rejections_records.json")
+    assert lines[-1] == "unlisted: 1"
+    assert "not a record: 1" not in lines
+    assert "Records rejected: 9" in lines

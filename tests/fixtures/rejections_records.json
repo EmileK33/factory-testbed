@@ -1,0 +1,79 @@
+[
+  {
+    "id": "M1",
+    "name": "Co M1",
+    "amount": 100,
+    "currency": "EUR",
+    "region": "EU",
+    "tags": ""
+  },
+  {
+    "id": "M2",
+    "name": "Co M2",
+    "amount": 100,
+    "currency": "USD",
+    "region": "EU",
+    "tags": ""
+  },
+  {
+    "id": "M3",
+    "amount": 1,
+    "currency": "EUR",
+    "region": "EU"
+  },
+  {
+    "id": "M4",
+    "name": "Co M4",
+    "amount": 100,
+    "currency": "EUR",
+    "region": "MARS",
+    "tags": ""
+  },
+  {
+    "id": "M5",
+    "name": "Co M5",
+    "amount": 100,
+    "currency": "GBP",
+    "region": "EU",
+    "tags": ""
+  },
+  {
+    "id": "M6",
+    "name": "Co M6",
+    "amount": "12",
+    "currency": "EUR",
+    "region": "EU",
+    "tags": ""
+  },
+  {
+    "id": "M6b",
+    "name": "Co M6b",
+    "amount": true,
+    "currency": "EUR",
+    "region": "EU",
+    "tags": ""
+  },
+  {
+    "id": "M7",
+    "name": "Co M7",
+    "amount": -5,
+    "currency": "EUR",
+    "region": "EU",
+    "tags": ""
+  },
+  {
+    "id": "M8",
+    "name": "Co M8",
+    "amount": -5,
+    "currency": "GBP",
+    "region": "MARS",
+    "tags": ""
+  },
+  {
+    "name": "No Id",
+    "amount": 1,
+    "currency": "EUR",
+    "region": "MARS"
+  },
+  "garbage"
+]

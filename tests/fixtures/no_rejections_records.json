@@ -1,0 +1,18 @@
+[
+  {
+    "id": "N1",
+    "name": "Co N1",
+    "amount": 100,
+    "currency": "EUR",
+    "region": "EU",
+    "tags": ""
+  },
+  {
+    "id": "N2",
+    "name": "Co N2",
+    "amount": 100,
+    "currency": "USD",
+    "region": "NA",
+    "tags": ""
+  }
+]

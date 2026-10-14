@@ -1,7 +1,9 @@
 """Tests for the feed validation rules."""
 
+import pytest
+
 from src import validate
-from src.validate import check_record
+from src.validate import REJECTION_REASONS, check_record, rejection_reason
 
 CLEAN = {
     "id": "R-2001",
@@ -58,3 +60,41 @@ def test_settlement_pairs_are_configured():
     assert ("EU", "EUR") in validate.ALLOWED_PAIRS
     assert ("NA", "USD") in validate.ALLOWED_PAIRS
     assert ("APAC", "JPY") in validate.ALLOWED_PAIRS
+
+
+# --- rejection reasons (#272) -------------------------------------------------
+
+def _rec(**overrides):
+    base = {"id": "X", "name": "n", "amount": 1, "currency": "EUR", "region": "EU"}
+    base.update(overrides)
+    return base
+
+
+REASON_SAMPLES = [
+    (5, "not_a_record"),
+    (_rec(name=""), "missing_field"),
+    (_rec(region="MARS"), "unknown_region"),
+    (_rec(currency="GBP"), "unknown_currency"),
+    (_rec(amount="1"), "amount_not_whole_number"),
+    (_rec(amount=True), "amount_not_whole_number"),
+    (_rec(amount=-1), "negative_amount"),
+    (_rec(), None),
+    (_rec(currency="USD"), None),  # outside ALLOWED_PAIRS stays accepted
+]
+
+
+@pytest.mark.parametrize(("record", "code"), REASON_SAMPLES)
+def test_rejection_reason_names_the_failing_check(record, code):
+    assert rejection_reason(record) == code
+    assert (check_record(record) is None) == (code is not None)
+
+
+def test_every_reason_code_has_a_sample_and_a_label():
+    assert {c for _, c in REASON_SAMPLES if c} == set(REJECTION_REASONS)
+
+
+def test_the_first_failing_check_wins():
+    assert rejection_reason(_rec(id="", region="MARS")) == "missing_field"
+    assert rejection_reason(_rec(region="MARS", currency="GBP", amount=-1)) == "unknown_region"
+    assert rejection_reason(_rec(currency="GBP", amount=-1)) == "unknown_currency"
+    assert rejection_reason(_rec(amount=-1.5)) == "amount_not_whole_number"
