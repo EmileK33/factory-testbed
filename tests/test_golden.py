@@ -18,3 +18,9 @@ def test_report_matches_the_committed_golden_artifact():
         "rendered report differs from artifacts/report.golden.txt; "
         "regenerate it with `python -m tools.write_golden`"
     )
+
+
+def test_summarise_artifact_quotes_the_validation_line_not_the_footer():
+    from tools.write_golden import summarise_artifact
+
+    assert summarise_artifact() == "Validation covers: id, name, amount, currency, region"
