@@ -147,3 +147,18 @@ def test_footer_presents_the_summary_and_derives_nothing(monkeypatch):
     assert "Records read: 9" in lines
     assert "Records accepted: 4" in lines
     assert "Records rejected: 5" in lines
+
+
+def test_footer_prints_a_reason_code_the_table_does_not_list(monkeypatch):
+    import src.summarise as summarise_module
+
+    real = summarise_module.rejection_reason
+    monkeypatch.setattr(
+        summarise_module,
+        "rejection_reason",
+        lambda record: "unlisted" if record == "garbage" else real(record),
+    )
+    lines = _report_lines("rejections_records.json")
+    assert lines[-1] == "unlisted: 1"
+    assert "not a record: 1" not in lines
+    assert "Records rejected: 9" in lines

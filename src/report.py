@@ -104,7 +104,9 @@ def render_report(records: list[dict] | None = None) -> str:
     lines.append("--------------------")
     reasons = summary.get("rejection_reasons", {})
     if reasons:
-        lines.extend(f"{REJECTION_REASONS[code]}: {count}" for code, count in reasons.items())
+        lines.extend(
+            f"{REJECTION_REASONS.get(code, code)}: {count}" for code, count in reasons.items()
+        )
     else:
         lines.append("No records were rejected.")
 

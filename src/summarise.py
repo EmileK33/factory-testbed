@@ -36,7 +36,10 @@ def summarise(records: list[dict]) -> dict:
 
     if rejected:
         result["rejected"] = rejected
-        result["rejection_reasons"] = {
-            code: by_reason[code] for code in REJECTION_REASONS if code in by_reason
-        }
+        # Check order; a code the table does not list is kept (last), never
+        # dropped, so the reason counts always sum to the rejected ids.
+        rank = {code: index for index, code in enumerate(REJECTION_REASONS)}
+        result["rejection_reasons"] = dict(
+            sorted(by_reason.items(), key=lambda item: rank.get(item[0], len(rank)))
+        )
     return result

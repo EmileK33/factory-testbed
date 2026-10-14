@@ -52,6 +52,22 @@ def test_nothing_rejected_leaves_both_keys_absent():
     assert "rejected" not in counts
     assert "rejection_reasons" not in counts
 
+
+def test_a_reason_code_the_table_does_not_list_is_counted_last_not_dropped(monkeypatch):
+    import src.summarise as summarise_module
+
+    real = summarise_module.rejection_reason
+    monkeypatch.setattr(
+        summarise_module,
+        "rejection_reason",
+        lambda record: "unlisted" if record == "garbage" else real(record),
+    )
+    counts = summarise(_fixture("rejections_records.json"))
+    assert list(counts["rejection_reasons"])[-1] == "unlisted"
+    assert counts["rejection_reasons"]["unlisted"] == 1
+    assert "not_a_record" not in counts["rejection_reasons"]
+    assert sum(counts["rejection_reasons"].values()) == len(counts["rejected"]) == 9
+
 _BASE = {"currency": "EUR", "region": "EU", "name": "n", "amount": 1}
 
 
