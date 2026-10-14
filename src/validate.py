@@ -36,7 +36,7 @@ REJECTION_REASONS = {
     "missing_field": "missing a required field",
     "unknown_region": "region not recognised",
     "unknown_currency": "currency not recognised",
-    "amount_not_whole_number": "amount is not a whole number",
+    "amount_not_whole_number": "amount is not an integer",
     "negative_amount": "amount is negative",
 }
 

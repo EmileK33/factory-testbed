@@ -112,7 +112,7 @@ def test_footer_lists_each_reason_once_with_its_count():
         "missing a required field: 2",
         "region not recognised: 2",
         "currency not recognised: 1",
-        "amount is not a whole number: 2",
+        "amount is not an integer: 2",
         "amount is negative: 1",
     ]
     assert lines[-9] == ""
@@ -138,8 +138,12 @@ def test_a_pair_outside_allowed_pairs_is_accepted_not_a_footer_reason():
 
 
 def test_footer_presents_the_summary_and_derives_nothing(monkeypatch):
-    fake = {"total": 3, "accepted": 1, "rejected": ["a", "b"], "rejection_reasons": {"negative_amount": 2}}
+    # Values chosen to differ from what the 2-record fixture would give itself.
+    fake = {"total": 9, "accepted": 4, "rejected": ["a", "b", "c", "d", "e"],
+            "rejection_reasons": {"negative_amount": 2}}
     monkeypatch.setattr(report, "summarise", lambda raw: fake)
     lines = render_report(json.loads((FIXTURES / "no_rejections_records.json").read_text(encoding="utf-8"))).splitlines()
     assert lines[-1] == "amount is negative: 2"
-    assert "Records read: 3" in lines
+    assert "Records read: 9" in lines
+    assert "Records accepted: 4" in lines
+    assert "Records rejected: 5" in lines
