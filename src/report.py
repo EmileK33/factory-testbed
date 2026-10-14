@@ -10,7 +10,8 @@ from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
 from src.records import load_records
-from src.validate import ALLOWED_PAIRS, check_record
+from src.summarise import summarise
+from src.validate import ALLOWED_PAIRS, REJECTION_REASONS, check_record
 
 # The columns the report puts on the page, in order.
 REPORTED_FIELDS = ("id", "name", "region", "amount", "currency", "tags")
@@ -63,7 +64,7 @@ def render_report(records: list[dict] | None = None) -> str:
     raw = load_records() if records is None else records
 
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
-    rejected = len(raw) - len(accepted)
+    summary = summarise(raw)
 
     lines = ["Settlement report", "=================", ""]
     lines.extend(_table(accepted))
@@ -77,12 +78,12 @@ def render_report(records: list[dict] | None = None) -> str:
 
     total_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)
 
-    lines.append(f"Records read: {len(raw)}")
-    lines.append(f"Records accepted: {len(accepted)}")
-    lines.append(f"Records rejected: {rejected}")
+    lines.append(f"Records read: {summary['total']}")
+    lines.append(f"Records accepted: {summary['accepted']}")
+    lines.append(f"Records rejected: {len(summary.get('rejected', ()))}")
     lines.append("")
 
-    unlabelled = [row.get("name", "?") for row in raw if _missing(row.get("id"))]
+    unlabelled = [row.get("name", "?") for row in raw if isinstance(row, dict) and _missing(row.get("id"))]
     if unlabelled:
         lines.append(f"Unlabelled records: {', '.join(unlabelled)}")
 
@@ -95,5 +96,16 @@ def render_report(records: list[dict] | None = None) -> str:
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
     lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
+    lines.append("")
+
+    # The footer presents the summary's account of the rejections; it decides
+    # and counts nothing itself.
+    lines.append("Rejections by reason")
+    lines.append("--------------------")
+    reasons = summary.get("rejection_reasons", {})
+    if reasons:
+        lines.extend(f"{REJECTION_REASONS[code]}: {count}" for code, count in reasons.items())
+    else:
+        lines.append("No records were rejected.")
 
     return "\n".join(lines) + "\n"
