@@ -1215,17 +1215,20 @@ unexercisable; P4 removes P3's subject; `eol` does not cover a missing final new
 > A rep whose first two items are already implemented measures nothing, and one whose first two ran
 > a different process than the rest is comparable to nothing.
 
-### C1 — the first CP2-class defect in this corpus, and why it took this long
+### C1 — the uncovered-caller trap, first declared as this corpus's first CP2-class defect
 
-**Every other defect here is PRE-EXISTING, which is why none of them could ever score CP2.** CP2
+*History: the reasoning recorded when C1 was planted (`69432db`). Since Claude-Code-Source#445 3b, C1 is
+declared to CP1 and Phase B and no planted defect is scored at CP2 (see "Declared to CP1 and Phase B" below).*
+
+**At that time every other defect here was PRE-EXISTING, which is why none of them could have scored CP2.** CP2
 is the author re-reading *its own change* and its callers; a defect that was already in the tree
-before the item started is REVIEW's to catch, not CP2's. The `should catch at` column ran
+before the item started is REVIEW's to catch, not CP2's. The `should catch at` column then ran
 CP1(5) · REVIEW(8) · MERGE(1) · LIVE(1) and **zero CP2** for the whole life of this corpus, so the
-stage's effectiveness has never been measured — while `run-wave` required a CP2 marker and
+stage's effectiveness had never been measured — while `run-wave` required a CP2 marker and
 `verify.py` had no check for one. A required step, asserted by nothing: the `deadconst` shape,
 in the harness's own process.
 
-A CP2 defect therefore cannot simply be planted. It has to be a **trap a scheduled item springs**:
+A defect for CP2 therefore could not simply be planted, so C1 was built as a **trap a scheduled item springs**:
 
 `tools/write_golden.py::summarise_artifact()` returns `render_report().splitlines()[-1]`, and its
 docstring says why — *"the report ends with the validation-coverage line, so the last line is the
