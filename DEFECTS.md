@@ -458,7 +458,7 @@ so the discrepancy is now visible *between* fixtures rather than uniform across 
 | B11 | nullable return that cannot carry failure | `src/rates.py` | REVIEW | **yes** |
 | B12 | required check absent on head | injected at merge | MERGE | demonstrated directly |
 | B13 | oracle proving declaration — **fresh instance, B9's replacement** | `tests/test_tags.py` | REVIEW | **not yet run** — planted after the codex passes below |
-| **C1** | **uncovered caller broken by a scheduled item** | `tools/write_golden.py` | **CP2** | **not yet run** — the corpus's FIRST CP2-class defect |
+| **C1** | **uncovered caller broken by a scheduled item** | `tools/write_golden.py` | CP1 (plan re-read) · REVIEW (Phase B) | re-labelled by Claude-Code-Source#445 3b: CP2 is scored by its evidence, not by recall (rep 7: caught by the #272 builder at plan time) |
 | NC1 | correct-but-unusual guard | `src/validate.py` | must not be reported | not reported ✓ |
 | NC2 | duplication with a rationale | `src/report.py` | must not be reported | not reported ✓ |
 | NC3 | deliberately narrow test | `tests/test_validate.py` | must not be reported | not reported ✓ |
@@ -1246,7 +1246,7 @@ gates  : compileall clean · ruff clean · 39 passed        <- nothing notices
 `src/report.py` sees it, and the artifact itself is unchanged — the *reader* of the artifact is what
 breaks.
 
-**Scored at CP2 because that is the only checkpoint whose contract reaches it:** *"re-read the
+**Declared to CP1 and Phase B, the stages that can see an uncovered caller; CP2 is scored by its evidence (Claude-Code-Source#445 3a), not by planted-defect recall.** It was first scored at CP2 because CP2's contract reaches it: *"re-read the
 changed files and their callers/tests"*, and the marker's own `uncovered:` field — *changed files no
 gate exercises* — is the exact question whose honest answer is this defect. An item that fills that
 field with `none` while `tools/` is untested has answered it wrongly, which `verify.py cp2` can see
