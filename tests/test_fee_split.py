@@ -11,7 +11,7 @@ from src import normalise
 from src.normalise import FLAT_FEE, HANDLING_BP, fee_for
 
 REGIONS = [*HANDLING_BP, "XX", ""]
-AMOUNTS = [0, 1, 2, 9, 10, 99, 100, 333, 667, 9999, 10000, 10001, 19999, 20000, 2**31, 10**18 + 1]
+AMOUNTS = [0, 1, 2, 9, 10, 99, 100, 333, 667, 9999, 10000, 10001, 19999, 20000, 2**31, 10**18 + 1, -1, -9999]
 
 BASE_PUBLIC_NAMES = {"FLAT_FEE", "HANDLING_BP", "fee_for", "apply_fees", "annotations"}
 
