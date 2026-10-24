@@ -89,5 +89,16 @@ def test_report_footer_states_the_true_checked_count():
     assert "All " not in "".join(line for line in text.split("\n") if "reported fields" in line)
 
 
+def test_report_footer_count_is_derived_from_the_field_constants(monkeypatch):
+    from src import report, validate
+
+    monkeypatch.setattr(report, "REPORTED_FIELDS", ("id", "name", "tags"))
+    monkeypatch.setattr(validate, "VALIDATED_FIELDS", ("id", "name", "amount"))
+    text = report.render_report([_record(tags="a")])
+    assert "2 of 3 reported fields are checked by the validation rules." in text
+    monkeypatch.setattr(validate, "VALIDATED_FIELDS", ("id",))
+    assert "1 of 3 reported fields" in report.render_report([_record(tags="a")])
+
+
 def test_report_names_the_unlabelled_record():
     assert "Unlabelled records: Fennel Labs" in render_report()
