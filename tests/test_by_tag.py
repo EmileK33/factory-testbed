@@ -51,6 +51,15 @@ def test_by_tag_keeps_a_quoted_comma_tag_whole():
     assert counts["by_tag"] == {"eu": 1, "high,priority": 1, "settled": 1}
 
 
+def test_by_tag_keeps_the_case_check_record_returns():
+    # Keys are the tags exactly as check_record() returns them, so the counts
+    # agree with the report's tags column: no case-folding.
+    record = _record(tags="EU,eu,settled")
+    assert check_record(record)["tags"] == ["EU", "eu", "settled"]
+    counts = summarise([record])
+    assert counts["by_tag"] == {"EU": 1, "eu": 1, "settled": 1}
+
+
 def test_by_tag_counts_a_repeated_tag_once_per_record():
     counts = summarise([_record(id="A", tags="a,a, a"), _record(id="B", tags="a,b")])
     assert counts["by_tag"] == {"a": 2, "b": 1}
