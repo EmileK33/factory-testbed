@@ -30,11 +30,15 @@ def write_golden(path: str | Path | None = None) -> Path:
 def summarise_artifact() -> str:
     """One line describing the committed artifact, for the release notes.
 
-    The report ends with the validation-coverage line, so the last line is the
-    one worth quoting. Nothing downstream re-derives this, so it is read as
+    The line worth quoting is the validation-coverage line. The report now ends
+    with the rejection footer, so that line is no longer the last one: it is
+    found by its prefix. Nothing downstream re-derives this, so it is read as
     written.
     """
-    return render_report().splitlines()[-1]
+    for line in render_report().splitlines():
+        if line.startswith("Validation covers:"):
+            return line
+    raise ValueError("the report has no 'Validation covers:' line")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from src import validate
 from src.normalise import apply_fees
 from src.rates import to_usd_cents
 from src.records import load_records
+from src.summarise import summarise
 from src.validate import ALLOWED_PAIRS, check_record
 
 # The columns the report puts on the page, in order.
@@ -58,12 +59,25 @@ def _money(cents: int) -> str:
     return f"{sign}{cents // 100}.{cents % 100:02d}"
 
 
+def _rejection_footer(summary: dict) -> list[str]:
+    """Present the summary's rejections; nothing here decides or counts one."""
+    by_reason = summary["rejected_by_reason"]
+    if not by_reason:
+        return ["No records were rejected."]
+    out = ["Rejections by reason:"]
+    out.extend(
+        f"  {validate.REJECTION_REASONS[code]}: {count}" for code, count in by_reason.items()
+    )
+    return out
+
+
 def render_report(records: list[dict] | None = None) -> str:
     """Return the settlement report for *records* (defaults to the live feed)."""
     raw = load_records() if records is None else records
 
+    # The rows for the table. What was rejected, and why, is the summary's to say.
     accepted = [checked for checked in (check_record(row) for row in raw) if checked]
-    rejected = len(raw) - len(accepted)
+    summary = summarise(raw)
 
     lines = ["Settlement report", "=================", ""]
     lines.extend(_table(accepted))
@@ -77,12 +91,16 @@ def render_report(records: list[dict] | None = None) -> str:
 
     total_cents = sum(to_usd_cents(row["amount"], row["currency"]) for row in accepted)
 
-    lines.append(f"Records read: {len(raw)}")
-    lines.append(f"Records accepted: {len(accepted)}")
-    lines.append(f"Records rejected: {rejected}")
+    lines.append(f"Records read: {summary['total']}")
+    lines.append(f"Records accepted: {summary['accepted']}")
+    lines.append(f"Records rejected: {summary['rejected_count']}")
     lines.append("")
 
-    unlabelled = [row.get("name", "?") for row in raw if _missing(row.get("id"))]
+    unlabelled = [
+        row.get("name", "?")
+        for row in raw
+        if isinstance(row, dict) and _missing(row.get("id"))
+    ]
     if unlabelled:
         lines.append(f"Unlabelled records: {', '.join(unlabelled)}")
 
@@ -95,5 +113,7 @@ def render_report(records: list[dict] | None = None) -> str:
     pairs = ", ".join(f"{region}/{currency}" for region, currency in ALLOWED_PAIRS)
     lines.append(f"Settlement pairs in force: {pairs}")
     lines.append(f"Validation covers: {', '.join(validate.VALIDATED_FIELDS)}")
+    lines.append("")
+    lines.extend(_rejection_footer(summary))
 
     return "\n".join(lines) + "\n"

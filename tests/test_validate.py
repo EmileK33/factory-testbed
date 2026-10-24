@@ -53,6 +53,47 @@ def test_check_record_rejects_a_negative_amount():
     assert check_record({**CLEAN, "amount": 0}) is not None
 
 
+def test_inspect_record_names_the_first_failing_reason():
+    cases = [
+        (5, "not_a_record"),
+        ({key: v for key, v in CLEAN.items() if key != "id"}, "missing_field"),
+        ({**CLEAN, "name": ""}, "missing_field"),
+        ({**CLEAN, "region": "LATAM"}, "bad_region"),
+        ({**CLEAN, "currency": "GBP"}, "bad_currency"),
+        ({**CLEAN, "amount": "n/a"}, "non_integer_amount"),
+        ({**CLEAN, "amount": True}, "non_integer_amount"),
+        ({**CLEAN, "amount": -1}, "negative_amount"),
+    ]
+    assert set(code for _record, code in cases) == set(validate.REJECTION_REASONS)
+    for record, code in cases:
+        assert validate.inspect_record(record) == (None, code), record
+
+
+def test_inspect_record_counts_a_record_under_its_first_failing_check_only():
+    assert validate.inspect_record(
+        {**CLEAN, "region": "LATAM", "amount": -1, "currency": "GBP"}
+    ) == (None, "bad_region")
+    assert validate.inspect_record(
+        {"name": "N", "amount": -1, "currency": "GBP", "region": "NA"}
+    ) == (None, "missing_field")
+    assert validate.inspect_record({**CLEAN, "currency": "GBP", "amount": -1}) == (
+        None,
+        "bad_currency",
+    )
+
+
+def test_inspect_record_accepts_a_pair_outside_allowed_pairs():
+    # Ruling 6: ALLOWED_PAIRS stays unenforced.
+    checked, code = validate.inspect_record({**CLEAN, "region": "EU", "currency": "USD"})
+    assert code is None
+    assert checked is not None and checked["region"] == "EU"
+
+
+def test_check_record_agrees_with_inspect_record():
+    for record in (CLEAN, 5, {**CLEAN, "amount": -1}, {**CLEAN, "currency": "GBP"}):
+        assert check_record(record) == validate.inspect_record(record)[0]
+
+
 def test_settlement_pairs_are_configured():
     assert hasattr(validate, "ALLOWED_PAIRS")
     assert ("EU", "EUR") in validate.ALLOWED_PAIRS
