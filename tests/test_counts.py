@@ -11,8 +11,21 @@ from src.summarise import summarise
 def test_summarise_counts_the_feed_it_was_given():
     counts = summarise(load_records())
     assert counts["total"] == len(load_records())
-    assert counts["accepted"] == 5
-    assert counts["rejected"] == ["<unlabelled>", "R-1007", "R-1008"]
+    assert counts["accepted"] == 7
+    assert counts["rejected"] == ["<unlabelled>"]
+
+
+def test_the_two_corrected_rows_are_accepted_and_the_unlabelled_row_stays_rejected():
+    from src.validate import check_record
+
+    rows = {row.get("id"): row for row in load_records()}
+    assert rows["R-1007"]["currency"] == "EUR"
+    assert check_record(rows["R-1007"]) is not None
+    assert rows["R-1008"]["amount"] == 720
+    assert check_record(rows["R-1008"]) is not None
+    unlabelled = [row for row in load_records() if "id" not in row]
+    assert [row["name"] for row in unlabelled] == ["Fennel Labs"]
+    assert check_record(unlabelled[0]) is None
 
 
 def _record(record_id, **extra):
@@ -22,12 +35,14 @@ def _record(record_id, **extra):
 
 def test_by_tag_counts_accepted_records_of_the_feed():
     assert summarise(load_records())["by_tag"] == {
+        "air": 1,
         "apac": 1,
         "bulk": 1,
         "crossborder": 1,
-        "eu": 2,
+        "eu": 3,
         "high,priority": 1,
-        "na": 2,
+        "na": 3,
+        "rail": 1,
         "settled": 2,
         "small": 1,
     }
