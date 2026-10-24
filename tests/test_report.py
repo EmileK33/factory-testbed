@@ -141,7 +141,7 @@ def test_report_footer_counts_sum_to_records_rejected():
         "  missing field: 1",
         "  unrecognised region: 2",
         "  unrecognised currency: 1",
-        "  amount is not a whole number: 2",
+        "  amount is not a JSON integer: 2",
         "  amount is negative: 1",
     ]
 

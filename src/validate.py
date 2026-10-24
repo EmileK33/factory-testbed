@@ -26,7 +26,7 @@ REJECTION_REASONS = {
     "missing_field": "missing field",
     "bad_region": "unrecognised region",
     "bad_currency": "unrecognised currency",
-    "non_integer_amount": "amount is not a whole number",
+    "non_integer_amount": "amount is not a JSON integer",
     "negative_amount": "amount is negative",
 }
 

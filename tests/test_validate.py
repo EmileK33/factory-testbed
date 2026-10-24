@@ -82,6 +82,32 @@ def test_inspect_record_counts_a_record_under_its_first_failing_check_only():
     )
 
 
+def test_inspect_record_precedence_is_pinned_for_every_adjacent_pair_of_checks():
+    no_id = {key: value for key, value in CLEAN.items() if key != "id"}
+    pairs = [
+        # missing_field before bad_region
+        ({**no_id, "region": "LATAM"}, "missing_field"),
+        # bad_region before bad_currency
+        ({**CLEAN, "region": "LATAM", "currency": "GBP"}, "bad_region"),
+        # bad_currency before non_integer_amount
+        ({**CLEAN, "currency": "GBP", "amount": "n/a"}, "bad_currency"),
+        # non_integer_amount before negative_amount
+        ({**CLEAN, "amount": -1.5}, "non_integer_amount"),
+        # not_a_record before everything (nothing to be missing from)
+        ([], "not_a_record"),
+    ]
+    for record, code in pairs:
+        assert validate.inspect_record(record) == (None, code), record
+
+
+def test_the_whole_number_label_is_true_for_every_amount_the_check_rejects():
+    # The check rejects every non-int, including a float that is numerically whole.
+    label = validate.REJECTION_REASONS["non_integer_amount"]
+    for amount in (1200.0, 1.5, "n/a", True):
+        assert validate.inspect_record({**CLEAN, "amount": amount})[1] == "non_integer_amount"
+    assert label == "amount is not a JSON integer"
+
+
 def test_inspect_record_accepts_a_pair_outside_allowed_pairs():
     # Ruling 6: ALLOWED_PAIRS stays unenforced.
     checked, code = validate.inspect_record({**CLEAN, "region": "EU", "currency": "USD"})
