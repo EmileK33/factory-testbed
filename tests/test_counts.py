@@ -50,9 +50,11 @@ def test_by_tag_is_present_and_empty_when_nothing_is_counted():
 
 
 def test_by_tag_keys_are_sorted_and_old_keys_keep_their_shape():
-    counts = summarise([_record("R-1", tags="z,m,a")])
+    # One tag per record, in non-sorted feed order: first-seen order is z, m, a under every
+    # hash seed (a multi-tag record would iterate its tag set in a seed-dependent order).
+    counts = summarise([_record("R-1", tags="z"), _record("R-2", tags="m"), _record("R-3", tags="a")])
     assert list(counts["by_tag"]) == ["a", "m", "z"]
-    assert counts == {"total": 1, "accepted": 1, "by_tag": {"a": 1, "m": 1, "z": 1}}
+    assert counts == {"total": 3, "accepted": 3, "by_tag": {"a": 1, "m": 1, "z": 1}}
 
 
 def test_by_tag_agrees_with_the_report_tags_column():
