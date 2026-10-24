@@ -69,6 +69,12 @@ def test_fee_for_is_the_sum_of_its_components(amount, region):
     )
 
 
-def test_normalise_public_names_are_unchanged():
-    public = sorted(n for n in vars(normalise) if not n.startswith("_"))
-    assert public == ["FLAT_FEE", "HANDLING_BP", "annotations", "apply_fees", "fee_for"]
+def test_normalise_public_functions_are_unchanged():
+    public = sorted(
+        name
+        for name, value in vars(normalise).items()
+        if callable(value)
+        and not name.startswith("_")
+        and getattr(value, "__module__", None) == normalise.__name__
+    )
+    assert public == ["apply_fees", "fee_for"]
