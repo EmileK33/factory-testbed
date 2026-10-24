@@ -57,6 +57,15 @@ def test_summarise_counts_each_record_under_its_first_failing_reason():
     assert counts["rejected_count"] == counts["total"] - counts["accepted"]
 
 
+def test_summarise_lists_reasons_in_taxonomy_order_not_encounter_order():
+    counts = summarise([_rec(id="F", amount=-3), _rec(id="B", region="LATAM"), 5])
+    assert list(counts["rejected_by_reason"]) == [
+        "not_a_record",
+        "bad_region",
+        "negative_amount",
+    ]
+
+
 def test_summarise_labels_a_non_dict_record_instead_of_raising():
     counts = summarise([5, None, "x"])
     assert counts["rejected"] == ["<unlabelled>"] * 3
