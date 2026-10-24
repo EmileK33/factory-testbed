@@ -1,5 +1,7 @@
 """Tests for the packed-column helpers."""
 
+import pytest
+
 from src.parse import parse_tags
 
 
@@ -28,6 +30,58 @@ def test_parse_tags_is_idempotent():
 def test_parse_tags_does_not_raise_on_a_column_of_an_unusable_type():
     assert parse_tags(17) == []
     assert parse_tags({"na": 1}) == []
+
+
+PARSE_CASES = [
+    ('eu,"high,priority",settled', ["eu", "high,priority", "settled"]),
+    ('a, "b,c"', ["a", "b,c"]),
+    ('"a""b",c', ['a"b', "c"]),
+    ('ab"c,d', ['ab"c', "d"]),
+    ("a ,b ", ["a", "b"]),
+    ('" a ",b', ["a", "b"]),
+    ("a,,b", ["a", "b"]),
+    ('a,"",b', ["a", "b"]),
+    ("   ", []),
+    ("a,\tb", ["a", "b"]),
+    ("a, b", ["a", "b"]),
+    ("a,\x0bb", ["a", "b"]),
+    ("a,\x0cb", ["a", "b"]),
+    ("a,\nb", ["a", "b"]),
+    ("a,\r\nb", ["a", "b"]),
+    ("a, b", ["a", "b"]),
+    ("a, b", ["a", "b"]),
+    ('"high,\npriority",x', ["high, priority", "x"]),
+    ('"high,  priority"', ["high, priority"]),
+    (" a  b\t", ["a b"]),
+    ("a; b,c", ["a; b", "c"]),
+    ('a,"b', ['a,"b']),
+    ('a,"b"c', ['a,"b"c']),
+    ('"a" ,b', ['"a" ,b']),
+    ('"a"\n,b', ['"a" ,b']),
+    ('eu,"high,\npriority', ['eu,"high, priority']),
+    ('a,"b  c', ['a,"b c']),
+    ('a,"b c', ['a,"b c']),
+    ([7, False, "settled"], ["7", "False", "settled"]),
+    (["x", 1.5, ("n", "m")], ["x", "1.5", "('n', 'm')"]),
+    (["x", "y"], ["x", "y"]),
+    ([" x ", None, "", "  ", "y z", "h,p"], ["x", "y z", "h,p"]),
+    (("x", None, "y"), ["x", "y"]),
+    ([], []),
+]
+
+
+@pytest.mark.parametrize(("raw", "expected"), PARSE_CASES)
+def test_parse_tags_enumerated_input_space(raw, expected):
+    assert parse_tags(raw) == expected
+
+
+@pytest.mark.parametrize(("raw", "expected"), PARSE_CASES)
+def test_parse_tags_is_idempotent_on_every_case(raw, expected):
+    assert parse_tags(parse_tags(raw)) == expected
+
+
+def test_parse_tags_does_not_split_a_value_the_csv_reader_rejects():
+    assert parse_tags('a,"b,c') == ['a,"b,c']
 
 
 def test_check_record_survives_a_tags_column_that_is_not_a_string():
