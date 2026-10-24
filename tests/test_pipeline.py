@@ -69,6 +69,24 @@ def test_fee_for_is_the_sum_of_its_components(amount, region):
     )
 
 
+def test_fee_for_computes_through_both_components(monkeypatch):
+    # Sentinel components: fee_for() must return exactly their sum, so a fee_for()
+    # that recomputes the fee itself and leaves the helpers unused cannot pass.
+    record = {"amount": 1000, "region": "EU"}
+    monkeypatch.setattr(normalise, "_flat_component", lambda r: 1000000)
+    monkeypatch.setattr(normalise, "_handling_component", lambda r: 7)
+    assert fee_for(record) == 1000007
+
+
+def test_fee_for_reads_each_component_independently(monkeypatch):
+    record = {"amount": 1000, "region": "EU"}
+    monkeypatch.setattr(normalise, "_flat_component", lambda r: 0)
+    assert fee_for(record) == 150
+    monkeypatch.undo()
+    monkeypatch.setattr(normalise, "_handling_component", lambda r: 0)
+    assert fee_for(record) == 25
+
+
 def test_normalise_public_functions_are_unchanged():
     public = sorted(
         name
