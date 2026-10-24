@@ -33,6 +33,7 @@ STRING_CASES = [
     ('ab"c,d', ['ab"c', "d"]),
     ('"ab"c,d', ["abc", "d"]),
     ('"a" ,b', ["a", "b"]),
+    ('" a ",b', ["a", "b"]),
     ("high   priority,x", ["high priority", "x"]),
     ('"high \t priority,x",y', ["high priority,x", "y"]),
     ("a\x00b,c", ["a\x00b", "c"]),
@@ -67,7 +68,7 @@ def test_parse_tags_sequence_input_space(raw, expected):
 
 
 def test_parse_tags_keeps_the_quoted_comma_tag_of_r_1001_whole():
-    assert parse_tags('eu,"high,priority",settled') != ["eu", "high", "priority", "settled"]
+    assert parse_tags('eu,"high,priority",settled') == ["eu", "high,priority", "settled"]
 
 
 def test_parse_tags_oversize_field_is_one_tag_not_a_raise():
