@@ -81,7 +81,8 @@ def render_report(records: list[dict] | None = None) -> str:
 
     lines.append(f"Records read: {summary['total']}")
     lines.append(f"Records accepted: {summary['accepted']}")
-    lines.append(f"Records rejected: {len(summary.get('rejected', []))}")
+    rejected_count = len(summary.get("rejected", []))
+    lines.append(f"Records rejected: {rejected_count}")
     lines.append("")
 
     unlabelled = [row.get("name", "?") for row in raw if _missing(row.get("id"))]
@@ -101,7 +102,7 @@ def render_report(records: list[dict] | None = None) -> str:
 
     reasons = summary.get("rejected_by_reason", {})
     if reasons:
-        lines.append(f"Rejected records: {len(summary['rejected'])}")
+        lines.append(f"Rejected records: {rejected_count}")
         lines.extend(f"  {reason}: {count}" for reason, count in reasons.items())
     else:
         lines.append("Rejected records: none")
