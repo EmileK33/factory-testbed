@@ -64,4 +64,6 @@ def parse_tags(raw: object) -> list[str]:
         fields = next(csv.reader([text], skipinitialspace=True, strict=True))
     except csv.Error:
         return [text]
-    return [tag for tag in (_squash(field) for field in fields) if tag]
+    # The whole text is already squashed, so a field needs only its edges trimmed
+    # (the space before a separating comma, or inside quotes next to a quote).
+    return [tag for tag in (field.strip() for field in fields) if tag]
