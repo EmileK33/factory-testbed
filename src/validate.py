@@ -29,29 +29,34 @@ def _is_whole_number(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def check_record(record: object) -> dict | None:
-    """Return a normalised copy of *record*, or ``None`` when it must be dropped."""
+def validate_record(record: object) -> tuple[dict | None, str | None]:
+    """Decide *record*: ``(normalised copy, None)`` or ``(None, reason)``.
+
+    This is the one place that decides what a rejection means. The reason is the
+    FIRST check the record fails, in the order below; a record outside
+    ``ALLOWED_PAIRS`` is not rejected here.
+    """
     if not isinstance(record, dict):
-        return None
+        return None, "record is not an object"
 
     for field in VALIDATED_FIELDS:
         if _missing(record.get(field)):
-            return None
+            return None, f"{field} missing or empty"
 
     if record["region"] not in REGION_CODES:
-        return None
+        return None, "region not recognised"
 
     if record["currency"] not in CURRENCY_CODES:
-        return None
+        return None, "currency not recognised"
 
     if not _is_whole_number(record["amount"]):
-        return None
+        return None, "amount is not a whole number"
 
     # The feed does not carry credits, and everything downstream of here assumes
     # it: apply_fees() raises on a negative gross. Rejecting it at the contract
     # boundary is what keeps a rendered report from failing halfway through.
     if record["amount"] < 0:
-        return None
+        return None, "amount is negative"
 
     return {
         "id": record["id"],
@@ -60,4 +65,9 @@ def check_record(record: object) -> dict | None:
         "currency": record["currency"],
         "region": record["region"],
         "tags": parse_tags(record.get("tags", "")),
-    }
+    }, None
+
+
+def check_record(record: object) -> dict | None:
+    """Return a normalised copy of *record*, or ``None`` when it must be dropped."""
+    return validate_record(record)[0]

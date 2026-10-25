@@ -1,0 +1,9 @@
+[
+  {"id": "M-1", "name": "Ok One", "amount": 100, "currency": "USD", "region": "NA", "tags": "na"},
+  {"name": "No Id And Bad Currency", "amount": 100, "currency": "GBP", "region": "NA", "tags": "na"},
+  {"id": "M-3", "name": "Bad Currency", "amount": 100, "currency": "GBP", "region": "NA", "tags": "na"},
+  {"id": "M-4", "name": "Negative", "amount": -5, "currency": "USD", "region": "NA", "tags": "na"},
+  {"id": "M-5", "name": "Boolean Amount", "amount": true, "currency": "USD", "region": "NA", "tags": "na"},
+  {"id": "M-6", "name": "Bad Region", "amount": 100, "currency": "USD", "region": "XX", "tags": "na"},
+  {"id": "M-7", "name": "Pair Outside Allowed", "amount": 100, "currency": "USD", "region": "EU", "tags": "eu"}
+]

@@ -33,6 +33,33 @@ def _record(record_id, **extra):
     return {**base, **extra}
 
 
+def test_rejected_by_reason_counts_the_first_failing_reason_and_sums_to_rejected():
+    feed = [
+        _record("R-1"),
+        {**_record("R-2", currency="GBP"), "id": ""},
+        _record("R-3", currency="GBP"),
+        _record("R-4", currency="GBP"),
+        _record("R-5", amount=-5),
+    ]
+    counts = summarise(feed)
+    assert counts["rejected_by_reason"] == {
+        "amount is negative": 1,
+        "currency not recognised": 2,
+        "id missing or empty": 1,
+    }
+    assert list(counts["rejected_by_reason"]) == sorted(counts["rejected_by_reason"])
+    assert sum(counts["rejected_by_reason"].values()) == len(counts["rejected"]) == 4
+
+
+def test_rejected_by_reason_is_absent_when_nothing_is_rejected():
+    assert "rejected_by_reason" not in summarise([_record("R-1")])
+    assert "rejected_by_reason" not in summarise([])
+
+
+def test_the_shipped_feed_is_rejected_for_the_missing_id_only():
+    assert summarise(load_records())["rejected_by_reason"] == {"id missing or empty": 1}
+
+
 def test_by_tag_counts_accepted_records_of_the_feed():
     assert summarise(load_records())["by_tag"] == {
         "air": 1,
