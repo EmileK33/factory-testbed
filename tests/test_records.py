@@ -73,7 +73,7 @@ def test_load_records_names_the_file_and_index_of_a_non_object_element(tmp_path,
         load_records(feed)
     message = str(info.value)
     assert str(feed) in message
-    assert "index 1" in message
+    assert "element at index 1 (0-based) is not a JSON object" in message
 
 
 def test_load_records_reports_the_index_of_the_offending_element_not_the_first(tmp_path):
@@ -83,8 +83,38 @@ def test_load_records_reports_the_index_of_the_offending_element_not_the_first(t
         load_records(feed)
     message = str(info.value)
     assert str(feed) in message
-    assert "index 2" in message
-    assert "index 1" not in message
+    assert "element at index 2 (0-based) is not a JSON object" in message
+
+
+def test_load_records_reports_a_bad_element_in_the_middle_of_the_feed(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text('[{"id": "A"}, null, {"id": "B"}]', encoding="utf-8")
+    with pytest.raises(ValueError) as info:
+        load_records(feed)
+    assert "element at index 1 (0-based) is not a JSON object" in str(info.value)
+
+
+def test_load_records_reports_the_first_of_two_bad_elements(tmp_path):
+    feed = tmp_path / "feed.json"
+    feed.write_text('[{"id": "A"}, 5, {"id": "B"}, null]', encoding="utf-8")
+    with pytest.raises(ValueError) as info:
+        load_records(feed)
+    message = str(info.value)
+    assert "element at index 1 (0-based) is not a JSON object" in message
+    assert "index 3" not in message
+
+
+def test_load_records_names_the_resolved_path_when_called_with_the_default(tmp_path, monkeypatch):
+    import src.records as records_module
+
+    feed = tmp_path / "default-feed.json"
+    feed.write_text('[{"id": "A"}, 5]', encoding="utf-8")
+    monkeypatch.setattr(records_module, "DATA_PATH", feed)
+    with pytest.raises(ValueError) as info:
+        load_records()
+    message = str(info.value)
+    assert str(feed) in message
+    assert "None" not in message
 
 
 @pytest.mark.parametrize(
@@ -93,6 +123,7 @@ def test_load_records_reports_the_index_of_the_offending_element_not_the_first(t
         pytest.param("null", "null", id="null"),
         pytest.param("true", "boolean", id="boolean"),
         pytest.param("5", "number", id="number"),
+        pytest.param("1.5", "number", id="float"),
         pytest.param('"ab"', "string", id="string"),
         pytest.param("[1, 2]", "array", id="array"),
     ],

@@ -34,5 +34,5 @@ def load_records(path: str | Path | None = None) -> list[dict]:
     for index, row in enumerate(payload):
         if not isinstance(row, dict):
             kind = _JSON_KIND.get(type(row), type(row).__name__)
-            raise ValueError(f"{target}: element at index {index} is not a JSON object (found {kind})")
+            raise ValueError(f"{target}: element at index {index} (0-based) is not a JSON object (found {kind})")
     return [dict(row) for row in payload]
