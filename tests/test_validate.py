@@ -83,6 +83,21 @@ def test_validate_record_reports_the_first_failing_check_only():
     assert validate.validate_record({**CLEAN, "amount": True}) == (None, "amount is not a whole number")
 
 
+def test_validate_record_reports_the_first_missing_field_in_validated_fields_order():
+    fields = validate.VALIDATED_FIELDS
+    assert fields == ("id", "name", "amount", "currency", "region")
+    for i, first in enumerate(fields):
+        for later in fields[i + 1 :]:
+            record = {**CLEAN, first: "", later: None}
+            assert validate.validate_record(record) == (None, f"{first} missing or empty"), (first, later)
+    several = {"id": "", "name": "", "amount": 100, "currency": "USD", "region": "NA"}
+    assert validate.validate_record(several) == (None, "id missing or empty")
+    assert validate.validate_record({k: v for k, v in CLEAN.items() if k not in fields}) == (
+        None,
+        "id missing or empty",
+    )
+
+
 def test_a_pair_outside_allowed_pairs_stays_accepted():
     record = {**CLEAN, "region": "EU", "currency": "USD"}
     assert ("EU", "USD") not in validate.ALLOWED_PAIRS
